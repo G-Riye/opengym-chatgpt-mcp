@@ -5,6 +5,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 
 ## [Unreleased]
 
+## [1.4.6] - 2026-10-29
+
+### Security
+- **The MCP token has been rotated.** A tokenized connector URL had been committed in the initial
+  import (`README-zh-CN.md`), so it was public for as long as the repository has existed. The
+  token in `secrets/mcp-token` is new; the old one now answers 401. Use `Show-Connection.cmd`
+  (or `/version`) for the current URL and update the ChatGPT connector.
+- Tracked docs no longer carry the owner's public hostnames, LAN address or Cloudflare tunnel id.
+  They use placeholders; the real values stay in gitignored files (`store/cloudflare.json`,
+  `store/public-url.txt`) and in the separate openGym deployment repository's generated files.
+
+### Changed
+- `src/main.mjs` `token` (Show-Connection) derives the LAN app URL from `../windows/access.json`
+  instead of a hardcoded address, and points at `Start.cmd` / `tunnel.ps1 -Mode cloudflare` when no
+  public URL is configured.
+
 ## [1.4.5] - 2026-10-29
 
 ### Added

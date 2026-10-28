@@ -7,8 +7,8 @@
 
 > **2026-10-29：公网入口换成 Cloudflare Tunnel（不再需要手机 Tailscale / DDNS）**
 >
-> - openGym App / PWA：`https://gym.469510353.xyz`（首次用 `?t=<chatgpt\secrets\app-token>` 写 cookie，再添加到主屏幕）
-> - ChatGPT 连接器：`https://mcp.469510353.xyz/mcp/<chatgpt\secrets\mcp-token>`（在 ChatGPT 里改这个 URL）
+> - openGym App / PWA：`https://gym.<your-domain>`（首次用 `?t=<chatgpt\secrets\app-token>` 写 cookie，再添加到主屏幕）
+> - ChatGPT 连接器：`https://mcp.<your-domain>/mcp/<chatgpt\secrets\mcp-token>`（在 ChatGPT 里改这个 URL）
 > - 启动/切换：`scripts\tunnel.ps1 -Mode cloudflare`；状态 `-Mode status`；停止 `-Mode stop`；`Start.cmd` 会按 `store\tunnel-mode.txt` 自动拉起
 > - 隧道由 `scripts\setup-cloudflare.ps1` 一次性创建（本机已完成）；配置在 `store\cloudflare.json` 与 `store\cloudflared.yml`，登录证书在 `C:\Users\46951\.cloudflared\cert.pem`
 > - 原生 App 的 `/api/health`、`/api/config`、`POST /api/pair/redeem`、`OPTIONS /api/*`、带 Bearer 的 `/api/*` 和 `/exercise-media/*` 已在 app-proxy 放行；浏览器 UI 仍然需要 64 位令牌
@@ -168,24 +168,24 @@ openGym 在你开始训练那一刻按正式重量算递增（3 组时 50% / 75%
    curl.exe -s http://127.0.0.1:8787/healthz   # version / tools / rev
    Show-Connection.cmd                          # 地址 + 令牌
    ```
-   公网入口和本机是同一个进程，`https://riye-pc.tail86ab0.ts.net/mcp` 的 `initialize`
+   公网入口和本机是同一个进程，`https://<your-public-host>/mcp` 的 `initialize`
    会返回同一个 `serverInfo.version`。
 
 **如果 ChatGPT 只显示 11 个工具（服务端其实已是 15 个）** —— 这是客户端缓存，不是服务端没升级：
 
-1. 先确认服务端：浏览器打开 `https://riye-pc.tail86ab0.ts.net/version`（不需要令牌），
+1. 先确认服务端：浏览器打开 `https://<your-public-host>/version`（不需要令牌），
    应看到 `"version"`、`"tool_count": 15` 和 15 个工具名。
 2. 开一个新对话；仍然 11 个 → 在插件/连接器设置里**移除该连接器再重新添加**（URL 不变）。
 3. 还不行就用**版本化路径**当连接器 URL，强制 ChatGPT 新建一份缓存：
-   `https://riye-pc.tail86ab0.ts.net/mcp/<令牌>/v141`
+   `https://<your-public-host>/mcp/<令牌>/v141`
    （同一个服务器、同一个令牌，只是路径不同；`/version` 的 `paths.versioned_alias` 给出当前该用的那条）
 4. 让 ChatGPT 调 `get_capabilities`，返回 `version` 与 `tools: 15` 才算刷新成功。
 5. 命令行看响应头：`curl -sI http://127.0.0.1:8787/healthz` 里有
    `X-OpenGym-Mcp-Version` / `X-OpenGym-Mcp-Tools`。
 6. **确认 ChatGPT 到底有没有连上来（1.4.2 起）**：
-   - `https://riye-pc.tail86ab0.ts.net/version` 的 `last_client` 会显示**最后一次 `initialize`**
+   - `https://<your-public-host>/version` 的 `last_client` 会显示**最后一次 `initialize`**
      的时间、客户端名（`clientInfo.name`）、协议和它拿到的版本；
-   - `https://riye-pc.tail86ab0.ts.net/access?token=<令牌>` 返回最近 200 条请求记录，
+   - `https://<your-public-host>/access?token=<令牌>` 返回最近 200 条请求记录，
      包括每次 `tools/list` 时服务端给出的工具数；
    - 你在 ChatGPT 里新开对话/重加连接器后，这里应该立刻多出一条 `initialize`；
      如果**没有新增**，说明 ChatGPT 根本没重新连接（还在用会话里缓存的旧列表）。
@@ -300,7 +300,7 @@ Tunnel-Tailscale.cmd
 **本机 2026-10-27 实测可用地址：**
 
 ```text
-https://riye-pc.tail86ab0.ts.net/mcp/f3657e40f36d948071b4993e2c5705a80de72261b4072fdf92e26b1eba8ecaea
+https://<your-public-host>/mcp/<mcp-token>
 ```
 
 随时用 `Show-Connection.cmd` 打印当前地址（没有公网地址时它会提示先开隧道）。
@@ -312,13 +312,13 @@ https://riye-pc.tail86ab0.ts.net/mcp/f3657e40f36d948071b4993e2c5705a80de72261b40
 
 - **`tailscale up --timeout=20s` 会取消登录**：CLI 超时退出后，你再去点那个登录链接，
   tailscaled 那边已经不认了，于是“明明登录成功但一直是 Logged out”。脚本已去掉 `--timeout`。
-- **本机浏览器打不开 `https://riye-pc.tail86ab0.ts.net` 不代表隧道坏了**：这台机器开着
+- **本机浏览器打不开 `https://<your-public-host>` 不代表隧道坏了**：这台机器开着
   Clash Verge（TUN + fake-ip），`ts.net` 会被解析成 `198.18.x.x` 走进代理，TLS 握手必失败；
   公开 DNS 查询还会被劫持成同一个假 IP。验证要用真实入口 IP：
 
   ```powershell
-  curl.exe -sS --resolve riye-pc.tail86ab0.ts.net:443:208.111.34.11 `
-    https://riye-pc.tail86ab0.ts.net/healthz
+  curl.exe -sS --resolve <your-public-host>:443:208.111.34.11 `
+    https://<your-public-host>/healthz
   ```
 
   手机蜂窝网络、ChatGPT 服务器走的是正常 DNS，不受影响。
@@ -331,24 +331,24 @@ iPhone 同时只能开一个 VPN。ChatGPT App 需要代理 VPN，所以手机�
 openGym App 必须用「完全不依赖 VPN」的公网地址。做法是再把 PWA 自己发布到第二个 Funnel 端口：
 
 ```text
-https://riye-pc.tail86ab0.ts.net:8443/    ← openGym App 本体（公网、带令牌）
-https://riye-pc.tail86ab0.ts.net/         ← ChatGPT 连接器（只有 MCP）
+https://<your-public-host>:8443/    ← openGym App 本体（公网、带令牌）
+https://<your-public-host>/         ← ChatGPT 连接器（只有 MCP）
 ```
 
 - **第一次打开要带令牌**（`secrets/app-token`）：
-  `https://riye-pc.tail86ab0.ts.net:8443/?t=<64位令牌>`，打开一次就写成 HttpOnly Cookie，
+  `https://<your-public-host>:8443/?t=<64位令牌>`，打开一次就写成 HttpOnly Cookie，
   之后直接进，可以「添加到主屏幕」当 App 用。
 - 最快的方式：电脑上双击 [`App-QR.cmd`](<App-QR.cmd>)，扫二维码即可（含令牌，等同密码，别外传）。
 - 想换令牌：删掉 `chatgpt\secrets\app-token`，运行 `Stop.cmd` 再 `Start.cmd`（新令牌自动生成），
   然后重新 `Tunnel-Tailscale.cmd` + `App-QR.cmd`。
 - 没令牌时公网只看到一个「需要访问令牌」页面，拿到令牌才能进 openGym 自身的登录。
 
-为什么不是把 LAN 地址映射出去：openGym 用内部 CA 的 HTTPS 且 `RP_ID = 192.168.50.47`，
+为什么不是把 LAN 地址映射出去：openGym 用内部 CA 的 HTTPS 且 `RP_ID = <lan-ip>`，
 所以公网入口只能换域名 + 自己代理一份明文 HTTP 给 Funnel。实现见 `src/app-proxy.mjs`
 （只监听 `127.0.0.1:8081`，代理 `/api/*`、`/exercise-media/*` 和 `frontend/dist`，不额外暴露端口）。
 
 已知限制：走 `*.ts.net:8443` 时**通行密钥（passkey）不可用**（WebAuthn 的 RP ID 绑的是 LAN IP），
-用密码登录即可；家里用 `https://192.168.50.47:8443` 一切照旧。
+用密码登录即可；家里用 `https://<lan-ip>:8443` 一切照旧。
 
 #### B. Cloudflare Named Tunnel（有域名时最稳）
 
@@ -548,7 +548,7 @@ ChatGPT **不能**像微信一样往一个已有对话里主动推送消息。�
 | 手机打开 `:8443` 只看到「需要访问令牌」 | 用带 `?t=` 的完整链接（`App-QR.cmd` 扫码），令牌在 `secrets\app-token` |
 | 扫码后仍然反复要令牌 | 无痕/私密浏览不保存 Cookie；Safari 设置里关掉「阻止所有 Cookie」；iCloud 私密代理一般不影响 |
 | `:8443` 502 / 打不开 | 先确认 `http://127.0.0.1:8081/__healthz` 正常；`Stop.cmd` 后 `Start.cmd` 会拉起 App 代理；再 `Tunnel-Tailscale.cmd` |
-| 家里 LAN 打开 `192.168.50.47:8443` 需要令牌吗 | 不需要，那是 Caddy 直连；令牌只加在公网 `:8443` 这一层 |
+| 家里 LAN 打开 `<lan-ip>:8443` 需要令牌吗 | 不需要，那是 Caddy 直连；令牌只加在公网 `:8443` 这一层 |
 | 想临时关掉 | `Stop.cmd`；只关隧道：`scripts\tunnel.ps1 -Mode stop` |
 
 ---
@@ -611,8 +611,8 @@ chatgpt\
 - 鉴权：无令牌 401；路径令牌 200。
 - 公网：Cloudflare Quick Tunnel 临时地址实测 `/healthz` 200、无令牌 401、`initialize` 200；通过隧道调用 `get_training_context` 返回 34 KB 中文数据正常；测试后已关闭。
 - Tailscale：已登录（`riye-pc`，账号 `qq469510353@`），Funnel 已启用，公网入口 IP `208.111.34.11 / 208.111.35.209`。
-- 公网连接器：`https://riye-pc.tail86ab0.ts.net/healthz` 200，`initialize` / `tools/list`（11）/ `get_status` / `get_updates` 全部通过（用 `--resolve` 绕过本机 Clash 的 fake-ip 验证）。
-- 公网 openGym App：`https://riye-pc.tail86ab0.ts.net:8443/` 无令牌 401、带 `?t=` 302 + `Set-Cookie`、带 Cookie 后首页/manifest/sw.js/`/api/health` 全 200。
+- 公网连接器：`https://<your-public-host>/healthz` 200，`initialize` / `tools/list`（11）/ `get_status` / `get_updates` 全部通过（用 `--resolve` 绕过本机 Clash 的 fake-ip 验证）。
+- 公网 openGym App：`https://<your-public-host>:8443/` 无令牌 401、带 `?t=` 302 + `Set-Cookie`、带 Cookie 后首页/manifest/sw.js/`/api/health` 全 200。
 - 冷启动：停掉 openGym + 连接器 + App 代理后，用 Startup 的 VBS 拉起，约 15 秒内三者健康、两个 Funnel 都在线。
 - 写入：在**临时复制的 data 副本**上跑通「新建模板（含周排期、备注、dbLoad）→ 改名 → 改组数/重量 → 删除」，并验证字段原样保留；**真实 `data` 未被修改**（rev 仍 80，模板仍 2 个）。
 - 更新：把游标归零后 `get_updates` 返回 2026-10-17 的训练（19 组），第二次调用返回 0。

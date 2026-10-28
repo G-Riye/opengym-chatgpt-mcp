@@ -57,15 +57,21 @@ function tokenInfo() {
   const chatgptDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const appUrl = readText(path.join(chatgptDir, 'store', 'app-url.txt'));
   const appToken = readText(path.join(chatgptDir, 'secrets', 'app-token'));
+  // The LAN address is detected by windows\Start-openGym.ps1 and written to access.json; keep it
+  // out of the source so a clone does not carry one person's private network.
+  let lanUrl = '';
+  try {
+    lanUrl = String(JSON.parse(readText(path.join(chatgptDir, '..', 'windows', 'access.json'))).app || '');
+  } catch { /* older install without access.json */ }
   console.log('');
   console.log('== openGym App（手机 5G 用） ==');
   if (appUrl) {
     console.log('app    :', `${appUrl}/?t=${appToken}`);
   } else {
-    console.log('app    :', '(公网地址未开启；运行 Tunnel-Tailscale.cmd)');
+    console.log('app    :', '(公网地址未开启；运行 Start.cmd 或 scripts\\tunnel.ps1 -Mode cloudflare)');
   }
   console.log('token  :', appToken || '(尚未生成；启动 app-proxy 后自动生成)');
-  console.log('lan    :', 'https://192.168.50.47:8443  (在家用，不需要令牌)');
+  console.log('lan    :', lanUrl ? `${lanUrl}  (在家用，不需要令牌)` : '(局域网地址见 windows\\access.json)');
 }
 
 async function smoke() {
