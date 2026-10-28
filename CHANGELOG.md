@@ -5,6 +5,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-10-28
+
+### Added
+- **MCP access log** (`logs/mcp-access.log`, one JSON line per request): records `initialize`
+  with the client's `clientInfo`, protocol, IP, user-agent and the tool count it was offered,
+  plus `tools/list` and every `tools/call`. `/version` now reports `last_client`, so
+  "did ChatGPT really reconnect, and to which build?" is answered from the server side.
+- `GET /access?token=<token>` returns the last 200 entries for quick inspection.
+- `README-zh-CN.md` §2.4 explains how to use both when a client keeps an old tool list.
+
 ## [1.4.1] - 2026-10-28
 
 ### Added

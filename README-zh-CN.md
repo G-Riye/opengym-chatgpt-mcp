@@ -173,6 +173,13 @@ openGym 在你开始训练那一刻按正式重量算递增（3 组时 50% / 75%
 4. 让 ChatGPT 调 `get_capabilities`，返回 `version` 与 `tools: 15` 才算刷新成功。
 5. 命令行看响应头：`curl -sI http://127.0.0.1:8787/healthz` 里有
    `X-OpenGym-Mcp-Version` / `X-OpenGym-Mcp-Tools`。
+6. **确认 ChatGPT 到底有没有连上来（1.4.2 起）**：
+   - `https://riye-pc.tail86ab0.ts.net/version` 的 `last_client` 会显示**最后一次 `initialize`**
+     的时间、客户端名（`clientInfo.name`）、协议和它拿到的版本；
+   - `https://riye-pc.tail86ab0.ts.net/access?token=<令牌>` 返回最近 200 条请求记录，
+     包括每次 `tools/list` 时服务端给出的工具数；
+   - 你在 ChatGPT 里新开对话/重加连接器后，这里应该立刻多出一条 `initialize`；
+     如果**没有新增**，说明 ChatGPT 根本没重新连接（还在用会话里缓存的旧列表）。
 
 ### 2.5 真实开练预览与肌群训练量（1.4.0，直接复用官方代码）
 

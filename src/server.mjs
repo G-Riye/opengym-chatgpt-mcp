@@ -6,7 +6,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { config, effectivePublicUrl } from './config.mjs';
+import { config, effectivePublicUrl, SELF } from './config.mjs';
 import { TOOLS, TOOL_MAP, toolList } from './tools.mjs';
 import { VERSION } from './version.mjs';
 import { readState, todayIso, pendingUpdates, sortedWorkouts, workoutView } from './state.mjs';
@@ -213,6 +213,39 @@ ${error ? `<div class="card"><span class="pill warn">读取失败</span><pre>${e
 
 export function createServer() {
   const token = mcpToken();
+
+  /* One JSON line per MCP request, so "is ChatGPT really talking to this build?"
+     becomes a fact instead of a guess. Kept small (rotates at 512 KB). */
+  const accessFile = path.join(SELF, 'logs', 'mcp-access.log');
+  function appendAccess(entry) {
+    try {
+      fs.mkdirSync(path.dirname(accessFile), { recursive: true });
+      try {
+        if (fs.statSync(accessFile).size > 512 * 1024) fs.renameSync(accessFile, accessFile + '.1');
+      } catch {}
+      fs.appendFileSync(accessFile, JSON.stringify({ ts: new Date().toISOString(), version: VERSION, ...entry }) + '\n');
+    } catch {}
+  }
+  function readAccessLog(limit = 200) {
+    try {
+      const lines = fs.readFileSync(accessFile, 'utf8').trim().split('\n').filter(Boolean);
+      return lines.slice(-limit).map(line => { try { return JSON.parse(line); } catch { return null; } }).filter(Boolean);
+    } catch { return []; }
+  }
+  function lastSeen() {
+    const entries = readAccessLog(500);
+    const init = [...entries].reverse().find(e => e.event === 'initialize');
+    if (!init) return null;
+    return {
+      at: init.ts,
+      client: init.client || null,
+      protocol: init.protocol || null,
+      ip: init.ip || null,
+      user_agent: init.ua || null,
+      server_version_they_got: init.version,
+    };
+  }
+
   return http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host || '127.0.0.1'}`);
     try {
@@ -235,6 +268,7 @@ export function createServer() {
       if (url.pathname === '/version') {
         // Unauthenticated on purpose: it only says which build is running and which tools it
         // offers, which is exactly what is needed to diagnose a client that cached an old list.
+        const seen = lastSeen();
         return json(res, 200, {
           name: 'opengym-chatgpt',
           version: VERSION,
@@ -246,10 +280,16 @@ export function createServer() {
             mcp: '/mcp/<token>',
             versioned_alias: '/mcp/<token>/v' + VERSION.replace(/\./g, ''),
             health: '/healthz',
+            access_log: '/access?token=<token>',
             dashboard: '/?token=<token>',
           },
+          last_client: seen,
           hint: 'ChatGPT caches a connector\'s tool list. If it still shows fewer tools, re-add the connector (new conversation is usually enough); as a cache-buster use the versioned_alias path as the connector URL - it is the same server, different path.',
         });
+      }
+      if (url.pathname === '/access') {
+        if (!authorized(req, url, token)) return json(res, 401, { error: 'unauthorized' });
+        return json(res, 200, { entries: readAccessLog(200) });
       }
       if (url.pathname === '/status') {
         if (!authorized(req, url, token)) return json(res, 401, { error: 'unauthorized' });
@@ -275,6 +315,18 @@ export function createServer() {
         }
         const body = await readBody(req);
         const messages = Array.isArray(body) ? body : [body];
+        const ip = req.socket?.remoteAddress || null;
+        const ua = String(req.headers['user-agent'] || '').slice(0, 200);
+        for (const message of messages) {
+          if (!message || typeof message.method !== 'string') continue;
+          if (message.method === 'initialize') {
+            appendAccess({ event: 'initialize', ip, ua, client: message.params?.clientInfo || null, protocol: message.params?.protocolVersion, tools: TOOLS.length });
+          } else if (message.method === 'tools/list') {
+            appendAccess({ event: 'tools/list', ip, ua, tools: TOOLS.length });
+          } else if (message.method === 'tools/call') {
+            appendAccess({ event: 'tools/call', ip, ua, tool: message.params?.name ?? null });
+          }
+        }
         const replies = [];
         for (const message of messages) {
           const reply = await dispatch(message);
