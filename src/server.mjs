@@ -116,6 +116,7 @@ async function dispatch(message) {
     if (method === 'ping') return { jsonrpc: '2.0', id, result: {} };
     if (method === 'tools/list') return { jsonrpc: '2.0', id, result: { tools: toolList() } };
     if (method === 'resources/list') return { jsonrpc: '2.0', id, result: { resources: [] } };
+    if (method === 'resources/templates/list') return { jsonrpc: '2.0', id, result: { resourceTemplates: [] } };
     if (method === 'prompts/list') return { jsonrpc: '2.0', id, result: { prompts: [] } };
     if (method === 'tools/call') {
       const name = message.params?.name;
@@ -232,6 +233,34 @@ export function createServer() {
       return lines.slice(-limit).map(line => { try { return JSON.parse(line); } catch { return null; } }).filter(Boolean);
     } catch { return []; }
   }
+
+  /* Every request that reaches this box, including the ones that never get a JSON-RPC reply
+     (401 from a stale token URL, the 405 SSE probe, /.well-known/* lookups). Without this a
+     client that fails before `initialize` is invisible, which makes "it says it cannot
+     connect" impossible to separate from "nothing ever arrived". Token values are masked. */
+  const httpFile = path.join(SELF, 'logs', 'mcp-http.log');
+  function appendHttp(entry) {
+    try {
+      fs.mkdirSync(path.dirname(httpFile), { recursive: true });
+      try {
+        if (fs.statSync(httpFile).size > 512 * 1024) fs.renameSync(httpFile, httpFile + '.1');
+      } catch {}
+      fs.appendFileSync(httpFile, JSON.stringify({ ts: new Date().toISOString(), version: VERSION, ...entry }) + '\n');
+    } catch {}
+  }
+  function readHttpLog(limit = 100) {
+    try {
+      const lines = fs.readFileSync(httpFile, 'utf8').trim().split('\n').filter(Boolean);
+      return lines.slice(-limit).map(line => { try { return JSON.parse(line); } catch { return null; } }).filter(Boolean);
+    } catch { return []; }
+  }
+  function maskPath(pathname, token) {
+    return pathname.split('/').map(part => {
+      if (part === token) return '<token>';
+      if (/^[a-f0-9]{64}$/i.test(part)) return '<token:' + part.slice(0, 6) + '>';
+      return part;
+    }).join('/');
+  }
   function lastSeen() {
     const entries = readAccessLog(500);
     const init = [...entries].reverse().find(e => e.event === 'initialize');
@@ -248,6 +277,30 @@ export function createServer() {
 
   return http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host || '127.0.0.1'}`);
+    const startedAt = Date.now();
+    const reqUa = String(req.headers['user-agent'] || '').slice(0, 200);
+    res.on('finish', () => {
+      try {
+        if (url.pathname === '/healthz' || url.pathname === '/') return;
+        const segs = url.pathname.split('/').filter(Boolean);
+        const pathToken = segs[0] === 'mcp' && segs[1] && /^[a-f0-9]{64}$/i.test(segs[1]) ? segs[1] : null;
+        appendHttp({
+          method: req.method,
+          path: maskPath(url.pathname, token),
+          status: res.statusCode,
+          ms: Date.now() - startedAt,
+          ua: reqUa,
+          accept: String(req.headers.accept || '').slice(0, 120),
+          content_type: String(req.headers['content-type'] || '').slice(0, 80),
+          session: req.headers['mcp-session-id'] ? 'present' : null,
+          proto_hdr: req.headers['mcp-protocol-version'] || null,
+          cf_ip: req.headers['cf-connecting-ip'] || null,
+          cf_ray: req.headers['cf-ray'] || null,
+          token_ok: pathToken ? pathToken === token : null,
+          stale_token_prefix: pathToken && pathToken !== token ? pathToken.slice(0, 8) : null,
+        });
+      } catch {}
+    });
     try {
       if (req.method === 'OPTIONS') {
         res.writeHead(204, {
@@ -281,6 +334,7 @@ export function createServer() {
             versioned_alias: '/mcp/<token>/v' + VERSION.replace(/\./g, ''),
             health: '/healthz',
             access_log: '/access?token=<token>',
+            requests: '/requests?token=<token>',
             dashboard: '/?token=<token>',
           },
           last_client: seen,
@@ -290,6 +344,10 @@ export function createServer() {
       if (url.pathname === '/access') {
         if (!authorized(req, url, token)) return json(res, 401, { error: 'unauthorized' });
         return json(res, 200, { entries: readAccessLog(200) });
+      }
+      if (url.pathname === '/requests') {
+        if (!authorized(req, url, token)) return json(res, 401, { error: 'unauthorized' });
+        return json(res, 200, { entries: readHttpLog(100) });
       }
       if (url.pathname === '/status') {
         if (!authorized(req, url, token)) return json(res, 401, { error: 'unauthorized' });

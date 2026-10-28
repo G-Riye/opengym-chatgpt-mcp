@@ -5,6 +5,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 
 ## [Unreleased]
 
+## [1.4.8] - 2026-10-29
+
+### Added
+- **Request log `logs/mcp-http.log` + `/requests` endpoint.** Every request that reaches the
+  connector is recorded (method, masked path, status, duration, UA, MCP session/protocol headers,
+  Cloudflare `cf-ray`/`cf-connecting-ip`, and — for tokenized URLs — whether the path token matched
+  plus the first 8 characters of a mismatched one). A client that dies before `initialize` (stale
+  token URL → 401, SSE probe → 405, `/.well-known/*` → 404) used to leave no trace at all, which
+  made "it says it cannot connect" indistinguishable from "nothing ever arrived".
+
+### Changed
+- `resources/templates/list` now answers `{ resourceTemplates: [] }` instead of a JSON-RPC
+   method-not-found error. MCP clients that probe it (Codex/ChatGPT desktop does) no longer log a
+  warning during startup.
+
+### Fixed
+- Nothing in the protocol changed; the 401 path is unchanged on purpose. A rotated token still has
+  to be re-pasted into the client, but now the log names the stale prefix (`stale_token_prefix`) so
+  the fix is one look instead of a guess.
+
 ## [1.4.7] - 2026-10-29
 
 ### Added
