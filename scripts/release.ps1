@@ -70,16 +70,27 @@ function Restart-Connector {
 #     package.json) runs against the code that was just bumped, not the old process
 Restart-Connector
 
-# 2. tests (read-only)
+# 2. tests (read-only); run each in its own process with a hard timeout, because a
+#    node script that keeps a handle open can otherwise make the release hang forever
+function Invoke-NodeTest([string]$label, [string]$script) {
+  $out = Join-Path $chatgpt ("logs\release-" + $label + ".log")
+  $err = Join-Path $chatgpt ("logs\release-" + $label + "-error.log")
+  $proc = Start-Process -FilePath $node -ArgumentList ('"' + $script + '"') -WorkingDirectory $chatgpt `
+    -WindowStyle Hidden -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
+  if (-not $proc.WaitForExit(180000)) {
+    try { $proc.Kill() } catch {}
+    throw ($label + ' timed out after 180 s (see logs\' + $label + '-error.log)')
+  }
+  return $proc.ExitCode
+}
+
 if (-not $SkipTests) {
   Write-Host '  running fields-test.mjs'
-  & $node (Join-Path $chatgpt 'scripts\fields-test.mjs')
-  if ($LASTEXITCODE -ne 0) { throw 'fields-test failed' }
+  if ((Invoke-NodeTest 'fields-test' (Join-Path $chatgpt 'scripts\fields-test.mjs')) -ne 0) { throw 'fields-test failed' }
   try {
     $null = Invoke-WebRequest -UseBasicParsing 'http://127.0.0.1:8787/healthz' -TimeoutSec 3
     Write-Host '  running mcp-smoke.mjs'
-    & $node (Join-Path $chatgpt 'scripts\mcp-smoke.mjs')
-    if ($LASTEXITCODE -ne 0) { throw 'mcp-smoke failed' }
+    if ((Invoke-NodeTest 'mcp-smoke' (Join-Path $chatgpt 'scripts\mcp-smoke.mjs')) -ne 0) { throw 'mcp-smoke failed' }
   } catch [System.Net.WebException] {
     Write-Host '  connector not running, skipping mcp-smoke'
   }
