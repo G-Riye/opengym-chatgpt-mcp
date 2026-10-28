@@ -1,0 +1,11 @@
+#!/bin/sh
+# Refuse a commit that stages personal deployment data. Enable once in this clone:
+#   git config core.hooksPath .githooks
+# The real patterns come from the local secrets/, store/ and windows/access.json files, so a
+# fresh clone still blocks generic leaks (a 64-hex token) and the protected paths.
+if command -v node >/dev/null 2>&1; then NODE=node
+elif [ -x ../windows/runtime/node.exe ]; then NODE=../windows/runtime/node.exe
+elif [ -x tools/node.exe ]; then NODE=tools/node.exe
+else echo 'personal guard: node not found, commit not checked' >&2; exit 0
+fi
+exec "$NODE" scripts/check-personal.mjs --staged

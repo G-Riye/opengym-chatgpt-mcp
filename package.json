@@ -1,6 +1,6 @@
 {
   "name": "opengym-chatgpt-connector",
-  "version": "1.4.6",
+  "version": "1.4.7",
   "private": true,
   "type": "module",
   "description": "Local MCP connector between ChatGPT chat and openGym 1.4.1 (read plans/results, preview and write plans).",
@@ -12,6 +12,8 @@
     "start": "node src/main.mjs",
     "doctor": "node src/main.mjs doctor",
     "test": "node src/main.mjs test",
-    "token": "node src/main.mjs token"
+    "token": "node src/main.mjs token",
+    "guard": "node scripts/check-personal.mjs",
+    "guard:staged": "node scripts/check-personal.mjs --staged"
   }
 }

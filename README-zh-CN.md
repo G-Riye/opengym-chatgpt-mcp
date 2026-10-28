@@ -3,16 +3,30 @@
 > 目标：ChatGPT **聊天窗口**里生成/调整训练计划 → 直接写进本机 openGym；在 openGym 里练完 → ChatGPT 下次对话能读到结果并据此更新建议。
 > 全程**不使用 GPT 的 Codex 能力**：走的是 ChatGPT 原生的「自定义 MCP 服务器 / 插件」工具调用，不是 Codex CLI、不是代码代理。
 
-安装位置：`C:\Users\46951\Documents\Codex\2026-10-16\c\outputs\openGym-1.4.1\chatgpt`
+安装位置：`<openGym 安装目录>\chatgpt`（本机真实路径见 `personal/DEPLOY-zh-CN.md`）
 
 > **2026-10-29：公网入口换成 Cloudflare Tunnel（不再需要手机 Tailscale / DDNS）**
 >
-> - openGym App / PWA：`https://gym.<your-domain>`（首次用 `?t=<chatgpt\secrets\app-token>` 写 cookie，再添加到主屏幕）
-> - ChatGPT 连接器：`https://mcp.<your-domain>/mcp/<chatgpt\secrets\mcp-token>`（在 ChatGPT 里改这个 URL）
-> - 启动/切换：`scripts\tunnel.ps1 -Mode cloudflare`；状态 `-Mode status`；停止 `-Mode stop`；`Start.cmd` 会按 `store\tunnel-mode.txt` 自动拉起
-> - 隧道由 `scripts\setup-cloudflare.ps1` 一次性创建（本机已完成）；配置在 `store\cloudflare.json` 与 `store\cloudflared.yml`，登录证书在 `C:\Users\46951\.cloudflared\cert.pem`
-> - 原生 App 的 `/api/health`、`/api/config`、`POST /api/pair/redeem`、`OPTIONS /api/*`、带 Bearer 的 `/api/*` 和 `/exercise-media/*` 已在 app-proxy 放行；浏览器 UI 仍然需要 64 位令牌
-> - Windows 与 iPhone 的完整说明见 `..\windows\README-zh-CN.md`
+> - 公开文档只写占位符：`https://gym.<your-domain>`、`https://mcp.<your-domain>`、`<lan-ip>`。
+> - **本机真实地址、令牌 URL、隧道 UUID、路径只放在 `personal/DEPLOY-zh-CN.md`**：`personal/` 已 gitignore，
+>   模板是 `personal.example/DEPLOY-zh-CN.md`。
+> - 启动/切换：`scripts\tunnel.ps1 -Mode cloudflare`；状态 `-Mode status`；停止 `-Mode stop`；
+>   `Start.cmd` 会按 `store\tunnel-mode.txt` 自动拉起。
+> - 隧道一次性配置：`scripts\setup-cloudflare.ps1`；配置在 `store\cloudflare.json`、`store\cloudflared.yml`。
+> - 原生 App 的 `/api/health`、`/api/config`、`POST /api/pair/redeem`、`OPTIONS /api/*`、带 Bearer 的
+>   `/api/*` 和 `/exercise-media/*` 已在 app-proxy 放行；浏览器 UI 仍然需要 64 位令牌。
+> - Windows 与 iPhone 的通用说明见 `..\windows\README.md`；本机细节见 `personal/DEPLOY-zh-CN.md`。
+>
+> ### 文件隔离与提交守卫
+>
+> - **项目文档（可公开）**：`README.md`、`README-zh-CN.md`、`CHANGELOG.md`、`GPT-INSTRUCTIONS.md`、
+>   `personal.example/`。这些只用占位符（`<your-domain>`、`<lan-ip>`、`<token>`）。
+> - **个人/本机内容（永不提交）**：`personal/`、`secrets/`、`store/`、`tools/`，以及 openGym 侧的
+>   `windows/README-zh-CN.md`、`windows/INSTALLATION.json`、`windows/verification.json` 等。
+> - **提交守卫**：`scripts/check-personal.mjs` 用本机 token、hostname、LAN 地址和
+>   `personal/guard-patterns.txt` 扫描已跟踪或已暂存的文件。每个 clone 装一次：
+>   `git config core.hooksPath .githooks`
+>   之后每次提交自动拦截；也可以手动 `node scripts/check-personal.mjs --staged`。
 
 ---
 

@@ -5,6 +5,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 
 ## [Unreleased]
 
+## [1.4.7] - 2026-10-29
+
+### Added
+- **File-level isolation of personal deployment notes.** `personal/` is gitignored and holds the real
+  hostnames, token URLs, tunnel id and machine paths; `personal.example/DEPLOY-zh-CN.md` is the
+  tracked template. Public docs keep placeholders only (`<your-domain>`, `<lan-ip>`, `<token>`).
+- **Submission guard.** `scripts/check-personal.mjs` (`npm run guard`, `guard:staged`) scans tracked
+  or staged files for this install's tokens, hostnames, LAN address and tunnel id (read from
+  `secrets/`, `store/`, `../windows/access.json` and an optional `personal/guard-patterns.txt`) and
+  refuses the commit. `.githooks/pre-commit` wires it in after `git config core.hooksPath .githooks`.
+
+### Changed
+- The openGym deployment side untracks its personal Windows docs the same way: the Chinese guide,
+  `INSTALLATION.json`, verification records and preview screenshots stay local; the repository keeps
+  only generic scripts and a placeholder `windows/README.md`.
+
 ## [1.4.6] - 2026-10-29
 
 ### Security

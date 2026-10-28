@@ -3,6 +3,10 @@ secrets/
 store/
 logs/
 
+# Personal deployment notes: real hostnames, LAN address, tunnel id, token URLs.
+# The tracked template is personal.example/; copy it to personal/ on a machine.
+personal/
+
 # Portable tooling downloaded at runtime (git / gh / cloudflared)
 tools/
 
