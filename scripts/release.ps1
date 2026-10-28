@@ -33,6 +33,14 @@ if ($serverFile -and -not ([IO.File]::ReadAllText($serverFile, [Text.Encoding]::
 }
 Write-Host '  version bumped in package.json + src/server.mjs'
 
+# 1b. the server must parse before anything is committed (a stray backtick in the
+#     INSTRUCTIONS template broke a release once: node --check catches it in 100 ms)
+& $node --check $serverFile
+if ($LASTEXITCODE -ne 0) { throw 'src/server.mjs does not parse - release aborted before commit' }
+& $node --check (Join-Path $chatgpt 'src\tools.mjs')
+if ($LASTEXITCODE -ne 0) { throw 'src/tools.mjs does not parse - release aborted before commit' }
+Write-Host '  syntax ok'
+
 # 2. tests (read-only; the connector must be running for the smoke suite)
 if (-not $SkipTests) {
   Write-Host '  running fields-test.mjs'

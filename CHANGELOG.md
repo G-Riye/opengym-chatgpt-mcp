@@ -5,6 +5,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-10-28
+
+### Fixed
+- A backtick inside the new instruction text closed the `INSTRUCTIONS` template literal, so
+  1.3.0 could not start. Removed and, more importantly, `scripts/release.ps1` now runs
+  `node --check` on `src/server.mjs` and `src/tools.mjs` **before** committing, so a release
+  can no longer be published with an unparseable server.
+- v1.3.0 tag replaced by v1.3.1; the feature set is identical.
+
 ## [1.3.0] - 2026-10-28
 
 ### Added
