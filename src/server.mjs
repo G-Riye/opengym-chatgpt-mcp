@@ -317,14 +317,15 @@ export function createServer() {
         const messages = Array.isArray(body) ? body : [body];
         const ip = req.socket?.remoteAddress || null;
         const ua = String(req.headers['user-agent'] || '').slice(0, 200);
+        const connPath = url.pathname.split('/').map(part => (part === token ? '<token>' : part)).join('/');
         for (const message of messages) {
           if (!message || typeof message.method !== 'string') continue;
           if (message.method === 'initialize') {
-            appendAccess({ event: 'initialize', ip, ua, client: message.params?.clientInfo || null, protocol: message.params?.protocolVersion, tools: TOOLS.length });
+            appendAccess({ event: 'initialize', ip, ua, path: connPath, client: message.params?.clientInfo || null, protocol: message.params?.protocolVersion, tools: TOOLS.length });
           } else if (message.method === 'tools/list') {
-            appendAccess({ event: 'tools/list', ip, ua, tools: TOOLS.length });
+            appendAccess({ event: 'tools/list', ip, ua, path: connPath, tools: TOOLS.length });
           } else if (message.method === 'tools/call') {
-            appendAccess({ event: 'tools/call', ip, ua, tool: message.params?.name ?? null });
+            appendAccess({ event: 'tools/call', ip, ua, path: connPath, tool: message.params?.name ?? null });
           }
         }
         const replies = [];

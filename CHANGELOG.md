@@ -5,6 +5,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 
 ## [Unreleased]
 
+## [1.4.3] - 2026-10-28
+
+### Added
+- The access log (and `/access`) now records the request **path** with the token masked
+  (`/mcp/<token>/connector`), so it is visible which connector URL a client actually used —
+  the decisive clue when a client keeps an old tool list while the server is current.
+
 ## [1.4.2] - 2026-10-28
 
 ### Added
