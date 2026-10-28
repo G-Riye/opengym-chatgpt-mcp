@@ -79,7 +79,10 @@ every write creates a backup in `store/backups/` (last 30 kept).
 
 ### Capabilities are self-describing
 
-`get_capabilities` returns the live manifest: connector version, every tool with its write
+`GET /version` (no token) reports the running build and tool names, and every response carries
+`X-OpenGym-Mcp-Version` / `X-OpenGym-Mcp-Tools` — the fastest way to prove that a client showing
+an old tool list is stale, not that the server is behind. `get_capabilities` returns the live
+manifest: connector version, every tool with its write
 flag, the full plan-edit vocabulary and limits, and the fields the read model exposes —
 generated from the same schemas the model is offered, and safe to call offline.
 

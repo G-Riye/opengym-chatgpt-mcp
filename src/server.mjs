@@ -69,6 +69,8 @@ function json(res, status, value, headers = {}) {
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
+    'X-OpenGym-Mcp-Version': VERSION,
+    'X-OpenGym-Mcp-Tools': String(TOOLS.length),
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'authorization, content-type, x-mcp-token, mcp-session-id',
     'Access-Control-Allow-Methods': 'POST, GET, DELETE, OPTIONS',
@@ -228,6 +230,25 @@ export function createServer() {
           ok: true, name: 'opengym-chatgpt', version: VERSION,
           writes: config.writes, tools: TOOLS.length, rev: S?._rev ?? 0,
           today: todayIso(), pending_updates: pendingUpdates(S),
+        });
+      }
+      if (url.pathname === '/version') {
+        // Unauthenticated on purpose: it only says which build is running and which tools it
+        // offers, which is exactly what is needed to diagnose a client that cached an old list.
+        return json(res, 200, {
+          name: 'opengym-chatgpt',
+          version: VERSION,
+          protocol: '2025-06-18',
+          write_enabled: config.writes,
+          tools: TOOLS.map(t => t.name),
+          tool_count: TOOLS.length,
+          paths: {
+            mcp: '/mcp/<token>',
+            versioned_alias: '/mcp/<token>/v' + VERSION.replace(/\./g, ''),
+            health: '/healthz',
+            dashboard: '/?token=<token>',
+          },
+          hint: 'ChatGPT caches a connector\'s tool list. If it still shows fewer tools, re-add the connector (new conversation is usually enough); as a cache-buster use the versioned_alias path as the connector URL - it is the same server, different path.',
         });
       }
       if (url.pathname === '/status') {

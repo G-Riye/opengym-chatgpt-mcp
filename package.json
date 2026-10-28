@@ -1,6 +1,6 @@
 {
   "name": "opengym-chatgpt-connector",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "private": true,
   "type": "module",
   "description": "Local MCP connector between ChatGPT chat and openGym 1.4.1 (read plans/results, preview and write plans).",

@@ -5,6 +5,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-10-28
+
+### Added
+- `GET /version` (no token): running version, protocol, tool names and a `paths.versioned_alias`
+  like `/mcp/<token>/v141`. Handy for proving the server is current when a client still shows an
+  old tool list, and the versioned path doubles as a cache-buster for such clients.
+- Every response now carries `X-OpenGym-Mcp-Version` and `X-OpenGym-Mcp-Tools` headers.
+- `README-zh-CN.md` §2.4 documents the "ChatGPT still shows 11 tools" case step by step
+  (new conversation → remove/re-add connector → versioned path → verify with get_capabilities).
+
 ## [1.4.0] - 2026-10-28
 
 ### Added

@@ -149,7 +149,7 @@ openGym 在你开始训练那一刻按正式重量算递增（3 组时 50% / 75%
 ### 2.4 怎么确认 ChatGPT 用的是最新版（能力自检）
 
 1. **对话里直接问**「你现在能做什么？是不是最新版？」——它会调 `get_capabilities`，
-   返回 `connector.version`（当前 1.3.2）、全部工具、可写的计划字段与取值范围、能读到的组类型。
+   返回 `connector.version`（当前 1.4.1）、全部工具、可写的计划字段与取值范围、能读到的组类型。
    `get_status` 里也带了 `connector_version` 和 `tool_count`。
 2. **ChatGPT 会缓存插件的工具列表**：连接器升级后，**开一个新对话**就会重新拉取；
    如果还显示旧能力，去插件设置里把该连接器移除再重新添加（URL 不变）。
@@ -161,6 +161,19 @@ openGym 在你开始训练那一刻按正式重量算递增（3 组时 50% / 75%
    ```
    公网入口和本机是同一个进程，`https://riye-pc.tail86ab0.ts.net/mcp` 的 `initialize`
    会返回同一个 `serverInfo.version`。
+
+**如果 ChatGPT 只显示 11 个工具（服务端其实已是 15 个）** —— 这是客户端缓存，不是服务端没升级：
+
+1. 先确认服务端：浏览器打开 `https://riye-pc.tail86ab0.ts.net/version`（不需要令牌），
+   应看到 `"version"`、`"tool_count": 15` 和 15 个工具名。
+2. 开一个新对话；仍然 11 个 → 在插件/连接器设置里**移除该连接器再重新添加**（URL 不变）。
+3. 还不行就用**版本化路径**当连接器 URL，强制 ChatGPT 新建一份缓存：
+   `https://riye-pc.tail86ab0.ts.net/mcp/<令牌>/v141`
+   （同一个服务器、同一个令牌，只是路径不同；`/version` 的 `paths.versioned_alias` 给出当前该用的那条）
+4. 让 ChatGPT 调 `get_capabilities`，返回 `version` 与 `tools: 15` 才算刷新成功。
+5. 命令行看响应头：`curl -sI http://127.0.0.1:8787/healthz` 里有
+   `X-OpenGym-Mcp-Version` / `X-OpenGym-Mcp-Tools`。
+
 ### 2.5 真实开练预览与肌群训练量（1.4.0，直接复用官方代码）
 
 这两个工具不自己重算，而是**直接 import openGym 前端模块**（`frontend/src/lib/session-start.js`、
