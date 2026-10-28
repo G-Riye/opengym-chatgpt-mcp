@@ -58,7 +58,8 @@ Full Chinese guide: [`README-zh-CN.md`](README-zh-CN.md).
 
 | Tool | Kind | Purpose |
 |---|---|---|
-| `get_status` | read | connection/health, profile, revision |
+| `get_status` | read | connection/health, profile, revision, connector version |
+| `get_capabilities` | read | self-describing manifest: version, tools, writable plan fields, limits, readable set types |
 | `get_training_context` | read | profile, bodyweight trend, routines, schedule, recent workouts |
 | `get_plan` | read | routines, weekday map, date overrides, next 7 days |
 | `search_exercises` | read | 5,600+ exercise library, Chinese + English |
@@ -73,6 +74,12 @@ Full Chinese guide: [`README-zh-CN.md`](README-zh-CN.md).
 
 Write safety: preview never writes, apply refuses stale proposals (revision check),
 every write creates a backup in `store/backups/` (last 30 kept).
+
+### Capabilities are self-describing
+
+`get_capabilities` returns the live manifest: connector version, every tool with its write
+flag, the full plan-edit vocabulary and limits, and the fields the read model exposes —
+generated from the same schemas the model is offered, and safe to call offline.
 
 ### What a plan edit can prescribe
 

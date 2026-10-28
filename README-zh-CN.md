@@ -43,11 +43,12 @@
 
 ---
 
-## 2. 已实现的工具（12 个）
+## 2. 已实现的工具（13 个）
 
 | 工具 | 作用 |
 |---|---|
-| `get_status` | 连通性、账号、rev、写入开关、待同步数 |
+| `get_status` | 连通性、账号、rev、写入开关、待同步数、**连接器版本** |
+| `get_capabilities` | **能力清单**：当前版本、全部工具、可写的计划字段与取值范围、能读到的组类型 |
 | `get_training_context` | **主上下文**：档案、体重趋势、全部模板（含组数/次数/重量/休息/备注）、周排期、未来 7 天、最近 5 次训练逐组数据、待同步数 |
 | `get_plan` | 只要计划；拿准确的 `routine_id` 和动作下标 |
 | `search_exercises` | 中文/英文搜 5,632 个内置动作 + 自定义动作；返回 `exercise_id`、部位、器械、是否自重/助力 |
@@ -140,6 +141,22 @@ openGym 在你开始训练那一刻按正式重量算递增（3 组时 50% / 75%
 **注意「爆发组」这个词**：openGym 中文界面里的「⚡ + 爆发组」就是 Rest-pause（休息暂停）的 burst，
 数据层存成 `type:"restpause"` + `clusters`（MCP 里叫 `bursts`）。计划端写法是
 `intensifier: { type:"restpause", total_reps, rest_sec }`，App 开始训练时会按 `10+4+2+1` 这种次序自动拆段。
+
+### 2.4 怎么确认 ChatGPT 用的是最新版（能力自检）
+
+1. **对话里直接问**「你现在能做什么？是不是最新版？」——它会调 `get_capabilities`，
+   返回 `connector.version`（当前 1.3.2）、全部工具、可写的计划字段与取值范围、能读到的组类型。
+   `get_status` 里也带了 `connector_version` 和 `tool_count`。
+2. **ChatGPT 会缓存插件的工具列表**：连接器升级后，**开一个新对话**就会重新拉取；
+   如果还显示旧能力，去插件设置里把该连接器移除再重新添加（URL 不变）。
+3. **本机验证**（不依赖 ChatGPT）：
+
+   ```powershell
+   curl.exe -s http://127.0.0.1:8787/healthz   # version / tools / rev
+   Show-Connection.cmd                          # 地址 + 令牌
+   ```
+   公网入口和本机是同一个进程，`https://riye-pc.tail86ab0.ts.net/mcp` 的 `initialize`
+   会返回同一个 `serverInfo.version`。
 
 ---
 
@@ -488,7 +505,7 @@ chatgpt\
     main.mjs                入口（start / doctor / test / token）
     server.mjs              MCP Streamable HTTP + 面板 + 认证
     app-proxy.mjs           把 openGym PWA 发布到 127.0.0.1:8081 给 Funnel（令牌 Cookie 保护）
-    tools.mjs               12 个工具的定义与描述（含 get_measurements）
+    tools.mjs               13 个工具的定义与描述（含 get_measurements / get_capabilities）
     state.mjs               读模型（计划/训练/历史/体重/更新游标）
     plan.mjs                计划修改校验、预览、写入、备份
     exercises.mjs           5,632 个动作 + 中文别名搜索

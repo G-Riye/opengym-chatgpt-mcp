@@ -53,8 +53,15 @@ check('initialize', init.status === 200 && init.data?.result?.protocolVersion ==
 
 const list = await rpc('tools/list', {});
 const tools = list.data?.result?.tools || [];
-check('tools/list', tools.length === 12, `${tools.length} tools`);
+check('tools/list', tools.length === 13, `${tools.length} tools`);
 check('no write tool without schema', tools.every(t => t.inputSchema?.type === 'object'));
+
+const capabilities = await call('get_capabilities');
+const pkg = JSON.parse(fs.readFileSync(path.join(SELF, 'package.json'), 'utf8'));
+check('get_capabilities version matches package.json', capabilities?.connector?.version === pkg.version,
+  `${capabilities?.connector?.version} vs ${pkg.version}`);
+check('get_capabilities lists every tool', capabilities?.tools?.length === tools.length, `${capabilities?.tools?.length} tools`);
+check('get_capabilities knows set types', (capabilities?.reading?.set_types || []).includes('restpause'));
 
 const status = await call('get_status');
 check('get_status', status?.connected === true, `rev=${status?.rev} writes=${status?.writes_enabled}`);
@@ -87,7 +94,7 @@ const unauth = await rpc('tools/list', {}, { auth: false });
 check('rejects missing token', unauth.status === 401, `HTTP ${unauth.status}`);
 
 const pathAuth = await rpc('tools/list', {}, { auth: false, viaPath: true });
-check('accepts token in path', pathAuth.status === 200 && (pathAuth.data?.result?.tools || []).length === 12);
+check('accepts token in path', pathAuth.status === 200 && (pathAuth.data?.result?.tools || []).length === 13);
 
 console.log(failures ? `\n${failures} check(s) failed` : '\nall checks passed');
 process.exit(failures ? 1 : 0);

@@ -25,23 +25,52 @@ Write-Host "== release $Version =="
 $pkgFile = Join-Path $chatgpt 'package.json'
 $pkg = [IO.File]::ReadAllText($pkgFile, [Text.Encoding]::UTF8)
 Set-Text $pkgFile ($pkg -replace '"version":\s*"[^"]+"', ('"version": "' + $Version + '"'))
+$versionFile = Join-Path $chatgpt 'src\version.mjs'
+$versionSrc = [IO.File]::ReadAllText($versionFile, [Text.Encoding]::UTF8)
+Set-Text $versionFile ($versionSrc -replace "export const VERSION = '[^']+';", ("export const VERSION = '" + $Version + "';"))
 $serverFile = Join-Path $chatgpt 'src\server.mjs'
-$server = [IO.File]::ReadAllText($serverFile, [Text.Encoding]::UTF8)
-Set-Text $serverFile ($server -replace "const VERSION = '[^']+';", ("const VERSION = '" + $Version + "';"))
-if ($serverFile -and -not ([IO.File]::ReadAllText($serverFile, [Text.Encoding]::UTF8) -match "const VERSION = '$([regex]::Escape($Version))';")) {
-  throw 'version bump did not apply'
+if (-not ([IO.File]::ReadAllText($versionFile, [Text.Encoding]::UTF8) -match "export const VERSION = '$([regex]::Escape($Version))';")) {
+  throw 'version bump did not apply to src/version.mjs'
 }
-Write-Host '  version bumped in package.json + src/server.mjs'
+Write-Host '  version bumped in package.json + src/version.mjs'
 
 # 1b. the server must parse before anything is committed (a stray backtick in the
 #     INSTRUCTIONS template broke a release once: node --check catches it in 100 ms)
-& $node --check $serverFile
-if ($LASTEXITCODE -ne 0) { throw 'src/server.mjs does not parse - release aborted before commit' }
-& $node --check (Join-Path $chatgpt 'src\tools.mjs')
-if ($LASTEXITCODE -ne 0) { throw 'src/tools.mjs does not parse - release aborted before commit' }
+foreach ($file in @($serverFile, $versionFile, (Join-Path $chatgpt 'src\tools.mjs'))) {
+  & $node --check $file
+  if ($LASTEXITCODE -ne 0) { throw ($file + ' does not parse - release aborted before commit') }
+}
 Write-Host '  syntax ok'
 
-# 2. tests (read-only; the connector must be running for the smoke suite)
+function Restart-Connector {
+  $pidFile = Join-Path $chatgpt 'store\connector.pid'
+  if (Test-Path $pidFile) {
+    $old = ([IO.File]::ReadAllText($pidFile, [Text.Encoding]::UTF8)).Trim()
+    if ($old) { Stop-Process -Id ([int]$old) -Force -ErrorAction SilentlyContinue }
+  }
+  Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -match 'src/main\.mjs' } |
+    ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force } catch {} }
+  Start-Sleep -Seconds 1
+  $p = Start-Process -FilePath $node -ArgumentList '"src/main.mjs"' -WorkingDirectory $chatgpt -WindowStyle Hidden -PassThru `
+    -RedirectStandardOutput (Join-Path $chatgpt 'logs\connector.log') -RedirectStandardError (Join-Path $chatgpt 'logs\connector-error.log')
+  Set-Text $pidFile ([string]$p.Id)
+  for ($i = 0; $i -lt 40; $i++) {
+    Start-Sleep -Milliseconds 500
+    try {
+      $health = (Invoke-WebRequest -UseBasicParsing 'http://127.0.0.1:8787/healthz' -TimeoutSec 2).Content
+      Write-Host ('  connector restarted: ' + $health)
+      return
+    } catch { }
+  }
+  throw 'connector did not come back after restart'
+}
+
+# 1c. restart first, so the smoke suite (which checks the reported version against
+#     package.json) runs against the code that was just bumped, not the old process
+Restart-Connector
+
+# 2. tests (read-only)
 if (-not $SkipTests) {
   Write-Host '  running fields-test.mjs'
   & $node (Join-Path $chatgpt 'scripts\fields-test.mjs')
@@ -85,23 +114,5 @@ if ($code -ne 0 -and (Test-Path $forwarder)) {
 & $git -C $chatgpt remote set-url origin 'https://github.com/G-Riye/opengym-chatgpt-mcp.git'
 if ($code -ne 0) { throw 'git push failed' }
 Write-Host "  pushed: https://github.com/G-Riye/opengym-chatgpt-mcp/releases/tag/v$Version"
-
-# 5. restart the connector so the running service is on the new version
-$pidFile = Join-Path $chatgpt 'store\connector.pid'
-if (Test-Path $pidFile) {
-  $old = (Get-Content $pidFile -Raw).Trim()
-  if ($old) { Stop-Process -Id ([int]$old) -Force -ErrorAction SilentlyContinue }
-}
-Start-Sleep -Seconds 1
-$p = Start-Process -FilePath $node -ArgumentList '"src/main.mjs"' -WorkingDirectory $chatgpt -WindowStyle Hidden -PassThru `
-  -RedirectStandardOutput (Join-Path $chatgpt 'logs\connector.log') -RedirectStandardError (Join-Path $chatgpt 'logs\connector-error.log')
-Set-Text $pidFile ([string]$p.Id)
-for ($i = 0; $i -lt 40; $i++) {
-  Start-Sleep -Milliseconds 500
-  try {
-    $health = (Invoke-WebRequest -UseBasicParsing 'http://127.0.0.1:8787/healthz' -TimeoutSec 2).Content
-    Write-Host ('  connector restarted: ' + $health)
-    exit 0
-  } catch { }
-}
-throw 'connector did not come back after restart'
+Write-Host '  done'
+exit 0

@@ -10,6 +10,8 @@ import {
 } from './state.mjs';
 import { search, exerciseCount } from './exercises.mjs';
 import { createProposal, commitProposal, proposalCount } from './plan.mjs';
+import { VERSION } from './version.mjs';
+import { MEASUREMENT_FIELDS } from './state.mjs';
 
 const obj = (properties = {}, required = []) => ({
   type: 'object', properties, required, additionalProperties: false,
@@ -205,6 +207,90 @@ const ACTION = {
   additionalProperties: false,
 };
 
+/* A self-describing manifest: what this connector can do right now. Built from the live
+   tool schemas so it cannot drift from what the model is actually offered, and it never
+   touches openGym or the data directory (works even when openGym is down). */
+function capabilities() {
+  const planTool = TOOLS.find(t => t.name === 'plan_preview');
+  const actionSchema = planTool?.inputSchema?.properties?.actions?.items;
+  const exerciseProps = actionSchema?.properties?.exercises?.items?.properties || {};
+  const patchProps = actionSchema?.properties?.patch?.properties || {};
+  const actions = actionSchema?.properties?.type?.enum || [];
+  return {
+    connector: {
+      name: 'opengym-chatgpt',
+      version: VERSION,
+      protocol: '2025-06-18',
+      transport: 'MCP Streamable HTTP at /mcp (token in path or Authorization: Bearer)',
+      generated_at: new Date().toISOString(),
+    },
+    tools: TOOLS.map(t => ({
+      name: t.name,
+      title: t.title,
+      write: t.annotations?.readOnlyHint === false,
+      destructive: t.annotations?.destructiveHint === true,
+    })),
+    plan_editing: {
+      actions,
+      modes: ['reps', 'time', 'cardio'],
+      exercise_fields: Object.keys(exerciseProps),
+      patch_fields: Object.keys(patchProps),
+      limits: {
+        exercises_per_routine: '1–12',
+        actions_per_preview: '1–30',
+        sets: '1–20',
+        reps: '1–100',
+        reps_min: '1–100, must be <= reps',
+        reps_max: '1–100, must be >= reps / reps_min',
+        seconds: '1–3600 (mode=time)',
+        minutes: '1–600 (mode=cardio)',
+        speed: '0–100 in the profile speed unit',
+        incline: '0–40 %, half-percent steps, cardio with a hill only',
+        weight: '0–1000 in the profile unit',
+        rest_sec: '0–900, warmup_rest_sec: 0–900',
+        warmup_sets: '0–5 (the app builds the ramp weights itself)',
+        inc: '0–100',
+        deload_factor: [0.8, 0.85, 0.9],
+        sets_max: '1–10 (triple progression)',
+        pyramid: '1–10 targets, each 1–100 or "max"; pyramid_weight 0–1000 per set, pyramid_rest 0–900 per set',
+        intensifier: ['dropset {count 1–10, pct 5–50}', 'restpause {total_reps 1–100, rest_sec 5–120}'],
+        progression: ['off', 'linear', 'greyskull', 'double', 'triple', 'time'],
+      },
+    },
+    reading: {
+      set_types: ['straight', 'dropset', 'restpause', 'warmup'],
+      set_type_labels: {
+        straight: '普通组',
+        dropset: '递减组',
+        restpause: '爆发组（休息暂停 / rest-pause）',
+        warmup: '热身组',
+      },
+      set_fields: ['weight', 'reps', 'seconds', 'minutes', 'speed', 'incline', 'done', 'rir', 'rpe',
+        'type', 'drops', 'bursts', 'burst_reps', 'max', 'note', 'sides.L/R'],
+      workout_exercise_fields: ['exercise_id', 'name', 'body_part', 'target', 'sets', 'top_weight',
+        'set_summary', 'prescribed', 'note'],
+      history_session_fields: ['date', 'workout_id', 'routine', 'sets_done', 'top_weight', 'top_reps',
+        'total_reps', 'est_1rm', 'drop_sets', 'rest_pause_sets', 'burst_reps', 'note'],
+      measurements: {
+        fields: MEASUREMENT_FIELDS.map(f => f.key),
+        units: 'centimetres (bodyFat is %); lb profiles only convert for display',
+        write_actions: ['log_measurement', 'set_measurement_fields'],
+      },
+      rest_pause_note: 'a rest-pause row\'s reps already include its bursts (10+4+2 is ONE set of 16)',
+    },
+    workflow: {
+      write: 'plan_preview → show changes → user confirms → plan_apply(confirmation:"确认写入")',
+      safety: [
+        'preview never writes',
+        'apply checks the document revision and refuses stale proposals',
+        'every write creates a backup (last 30 kept in store/backups)',
+        'writes can be disabled with OPENGYM_ALLOW_WRITES=0',
+      ],
+      docs: ['README.md', 'README-zh-CN.md', 'GPT-INSTRUCTIONS.md', 'CHANGELOG.md'],
+    },
+  };
+}
+
 export const TOOLS = [
   {
     name: 'get_status',
@@ -230,8 +316,20 @@ export const TOOLS = [
         pending_updates: pendingUpdates(S),
         open_proposals: proposalCount(),
         account: { name: auth?.user?.name || userInfo().name },
+        connector_version: VERSION,
+        tool_count: TOOLS.length,
+        protocol: '2025-06-18',
+        capabilities_tool: 'get_capabilities',
       };
     },
+  },
+  {
+    name: 'get_capabilities',
+    title: 'What this connector can do',
+    description: 'Read-only and offline-safe (does not touch openGym data). Returns the connector version, protocol, every tool with its write permission, the full plan-edit vocabulary (actions, exercise fields, modes, limits), the fields the read model returns (set types, drops, bursts, measurements) and the write-safety rules. Call this when the user asks “现在能做什么 / 是不是最新版”, or before promising a feature the schema may not have.',
+    inputSchema: obj(),
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    handler: () => capabilities(),
   },
   {
     name: 'get_training_context',

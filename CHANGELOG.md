@@ -5,6 +5,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-10-28
+
+### Added
+- **`get_capabilities`** (13th tool): a self-describing manifest — connector version, protocol,
+  every tool with its write flag, the full plan-edit vocabulary (actions, exercise fields,
+  modes, numeric limits), the read model's fields (set types, drops, bursts, measurements) and
+  the write-safety rules. Built from the live tool schemas so it cannot drift, and it touches
+  neither openGym nor the data directory.
+- `get_status` now returns `connector_version`, `tool_count` and `protocol`, so "am I on the
+  latest version?" is answerable without a separate call.
+- Server instruction #12 tells the model to use `get_capabilities` instead of guessing.
+- `scripts/mcp-smoke.mjs` checks that `get_capabilities.version` equals `package.json`.
+
+### Changed
+- Version now lives in `src/version.mjs` only; `src/server.mjs` imports it, and
+  `scripts/release.ps1` bumps that file (plus `package.json`) and syntax-checks it.
+
 ## [1.3.1] - 2026-10-28
 
 ### Fixed
