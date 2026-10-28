@@ -5,6 +5,15 @@
 
 安装位置：`C:\Users\46951\Documents\Codex\2026-10-16\c\outputs\openGym-1.4.1\chatgpt`
 
+> **2026-10-29：公网入口换成 Cloudflare Tunnel（不再需要手机 Tailscale / DDNS）**
+>
+> - openGym App / PWA：`https://gym.469510353.xyz`（首次用 `?t=<chatgpt\secrets\app-token>` 写 cookie，再添加到主屏幕）
+> - ChatGPT 连接器：`https://mcp.469510353.xyz/mcp/<chatgpt\secrets\mcp-token>`（在 ChatGPT 里改这个 URL）
+> - 启动/切换：`scripts\tunnel.ps1 -Mode cloudflare`；状态 `-Mode status`；停止 `-Mode stop`；`Start.cmd` 会按 `store\tunnel-mode.txt` 自动拉起
+> - 隧道由 `scripts\setup-cloudflare.ps1` 一次性创建（本机已完成）；配置在 `store\cloudflare.json` 与 `store\cloudflared.yml`，登录证书在 `C:\Users\46951\.cloudflared\cert.pem`
+> - 原生 App 的 `/api/health`、`/api/config`、`POST /api/pair/redeem`、`OPTIONS /api/*`、带 Bearer 的 `/api/*` 和 `/exercise-media/*` 已在 app-proxy 放行；浏览器 UI 仍然需要 64 位令牌
+> - Windows 与 iPhone 的完整说明见 `..\windows\README-zh-CN.md`
+
 ---
 
 ## 0. 先说结论：调研到的同类方案能不能套用

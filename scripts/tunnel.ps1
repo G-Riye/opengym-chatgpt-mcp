@@ -1,5 +1,5 @@
 param(
-  [ValidateSet('quick', 'named', 'tailscale', 'secure', 'stop', 'status')]
+  [ValidateSet('quick', 'named', 'tailscale', 'cloudflare', 'secure', 'stop', 'status')]
   [string]$Mode = 'quick',
   [string]$Name = 'opengym',
   [string]$PublicUrl = '',
@@ -65,6 +65,46 @@ if ($Mode -eq 'status') {
 }
 
 Stop-Tunnel
+
+if ($Mode -eq 'cloudflare') {
+  $exe = Join-Path $tools 'cloudflared.exe'
+  if (-not (Test-Path -LiteralPath $exe)) {
+    Say 'Downloading cloudflared (portable, one time)...'
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    Invoke-WebRequest -UseBasicParsing -Uri 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe' -OutFile $exe
+  }
+  $cert = Join-Path $env:USERPROFILE '.cloudflared\cert.pem'
+  if (-not (Test-Path -LiteralPath $cert)) {
+    throw ("Cloudflare is not logged in. Run once:`n  `"" + $exe + "`" tunnel login`nthen rerun: scripts\tunnel.ps1 -Mode cloudflare")
+  }
+  $hostsFile = Join-Path $store 'cloudflare.json'
+  $configFile = Join-Path $store 'cloudflared.yml'
+  if (-not (Test-Path -LiteralPath $hostsFile) -or -not (Test-Path -LiteralPath $configFile)) {
+    throw ("Missing " + $hostsFile + " or " + $configFile + ". Run scripts\setup-cloudflare.ps1 once to create the tunnel and its DNS routes.")
+  }
+  $cfg = Get-Content -LiteralPath $hostsFile -Raw | ConvertFrom-Json
+  if (-not $cfg.app -or -not $cfg.mcp) { throw 'cloudflare.json needs "app" and "mcp" hostnames' }
+  $out = Join-Path $logs 'cloudflared.log'
+  $err = Join-Path $logs 'cloudflared-error.log'
+  Remove-Item $out, $err -Force -ErrorAction SilentlyContinue
+  $args = 'tunnel --config "' + $configFile + '" --no-autoupdate run'
+  $process = Start-Process -FilePath $exe -ArgumentList $args -WindowStyle Hidden -PassThru `
+    -RedirectStandardOutput $out -RedirectStandardError $err
+  Write-Utf8 $pidFile $process.Id
+  Start-Sleep -Seconds 4
+  if ($process.HasExited) { throw ("cloudflared exited. See " + $err) }
+  Write-Utf8 $modeFile 'cloudflare'
+  Write-Utf8 $urlFile ('https://' + $cfg.mcp)
+  Write-Utf8 (Join-Path $store 'app-url.txt') ('https://' + $cfg.app)
+  $token = LocalToken
+  $appToken = Read-Text (Join-Path $root 'secrets\app-token')
+  Say ''
+  Say ('openGym App : https://' + $cfg.app + '/')
+  Say ('  first visit needs the token: https://' + $cfg.app + '/?t=' + $appToken)
+  Say ('ChatGPT MCP : https://' + $cfg.mcp)
+  Say ('  connector   : https://' + $cfg.mcp + '/mcp/' + $token)
+  exit 0
+}
 
 if ($Mode -eq 'quick') {
   $exe = Join-Path $tools 'cloudflared.exe'

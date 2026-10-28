@@ -93,6 +93,23 @@ function allowed(req, url) {
   return '';
 }
 
+// The paired iPhone/Android app cannot present the browser's 64-char token cookie: it pairs with
+// a one-time code and then authenticates with a Bearer token, and its own origin is the Capacitor
+// WebView's. It needs exactly these requests; each is authenticated by the openGym API itself
+// (the pairing code, the Bearer, or a public health/config answer), so this does not turn the
+// token gate off for the browser UI, which still needs the cookie or ?t=. It also needs the
+// exercise animations, which are public on any openGym server.
+function nativeAppAllowed(req, url) {
+  const p = url.pathname;
+  if (p.startsWith('/exercise-media/')) return req.method === 'GET' || req.method === 'HEAD';
+  if (p !== '/api' && !p.startsWith('/api/')) return false;
+  if (req.method === 'OPTIONS') return true;                          // CORS preflight from the app
+  if ((p === '/api/health' || p === '/api/config') && (req.method === 'GET' || req.method === 'HEAD')) return true;
+  if (p === '/api/pair/redeem' && req.method === 'POST') return true;  // the code is the credential
+  const auth = req.headers.authorization || '';
+  return auth.startsWith('Bearer ') && auth.slice(7).trim().length > 0; // the API verifies it
+}
+
 function unlockPage(message = '') {
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -187,7 +204,7 @@ const server = http.createServer(async (req, res) => {
     return send(res, 400, 'text/plain; charset=utf-8', 'bad request');
   }
 
-  const how = allowed(req, url);
+  const how = allowed(req, url) || (nativeAppAllowed(req, url) ? 'app' : '');
   if (!how) {
     if (url.pathname === '/' && (req.headers.accept || '').includes('text/html')) {
       return send(res, 401, 'text/html; charset=utf-8', unlockPage());

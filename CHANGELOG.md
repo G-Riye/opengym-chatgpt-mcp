@@ -5,6 +5,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 
 ## [Unreleased]
 
+## [1.4.5] - 2026-10-29
+
+### Added
+- **Cloudflare Tunnel mode.** `scripts/tunnel.ps1 -Mode cloudflare` runs one named tunnel that
+  publishes both hostnames: the openGym app proxy and the MCP connector. No DDNS, no IPv6
+  dependency, TLS from Cloudflare, and nothing inbound on the router. `scripts/setup-cloudflare.ps1`
+  creates the tunnel once and writes `store/cloudflare.json` + `store/cloudflared.yml`;
+  `Start.cmd` follows `store/tunnel-mode.txt` like before.
+- **The paired native app can now use the public app proxy without the browser token cookie.**
+  `/api/health`, `/api/config`, `POST /api/pair/redeem`, `OPTIONS /api/*`, any `/api/*` carrying a
+  Bearer token and `/exercise-media/*` are let through; each is authenticated by the openGym API
+  itself. The browser UI still needs the 64-char token cookie or `?t=`.
+
+### Changed
+- `tunnel.ps1` accepts `cloudflare` in `-Mode`; the status/stop commands and the stored public
+  URLs (`public-url.txt`, `app-url.txt`) now describe the two Cloudflare hostnames.
+
 ## [1.4.4] - 2026-10-29
 
 ### Changed
