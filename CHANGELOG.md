@@ -5,6 +5,32 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 
 ## [Unreleased]
 
+## [1.4.4] - 2026-10-29
+
+### Changed
+- **No artificial exercise cap.** `create_routine` and `add_exercise` no longer refuse more than
+  12 exercises. openGym's own routine editor has no such limit (`views/RoutineEdit.jsx` pushes
+  slots with no count check), and real plans now carry 15–20 movements. Per-exercise validation
+  (mode, ranges, exercise ids) is unchanged.
+- **Duplicate exercise ids now match the official app.** The connector used to reject the same
+  exercise id twice in one routine. openGym allows it: `sheets.jsx` `AddToRoutine` tags an
+  exercise "already in" and still adds it, and `lib/routines.js routineSlotIndex` maps a session
+  row to its slot among the twins. The connector now allows it and addresses slots by index
+  (`set_exercise`, `remove_exercise`, `move_exercise`, `replace_exercise`, supersets).
+- `get_capabilities` states the real limits (`exercises_per_routine`: at least 1, no artificial
+  cap; `duplicate_exercise_ids`: allowed and addressed by index), and the `plan_preview`
+  description says the same.
+
+### Added
+- `scripts/fields-test.mjs`: 15- and 20-exercise templates, `add_exercise` past 20, a
+  duplicate-id routine edited by slot index, and the official warm-up ramp in `preview_session`
+  rows. Negative cases still cover unknown fields, a missing `exercise_id`, an empty routine and
+  31 actions.
+
+### Kept
+- Write safety unchanged: 4 MB request-body cap, confirmation `确认写入`, a fresh revision check,
+  a local backup before every write, and `buildEntry` validation of every exercise field.
+
 ## [1.4.3] - 2026-10-28
 
 ### Added

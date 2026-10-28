@@ -171,7 +171,7 @@ const ACTION = {
     emoji: { type: 'string' },
     progression: { type: 'string', enum: ['off', 'linear', 'greyskull', 'double', 'triple', 'time'] },
     weekdays: { type: 'array', items: { type: 'integer', minimum: 0, maximum: 6 }, description: '0=Sunday … 6=Saturday.' },
-    exercises: { type: 'array', items: EXERCISE_INPUT, description: 'For create_routine: 1–12 exercises in order.' },
+    exercises: { type: 'array', items: EXERCISE_INPUT, description: 'For create_routine: at least 1 exercise, in order. No artificial cap (openGym itself has none) and the same exercise id may repeat; every edit addresses a slot by index.' },
     exercise: { ...EXERCISE_INPUT, description: 'For add_exercise / replace_exercise.' },
     index: { type: 'integer', minimum: 0 },
     to_index: { type: 'integer', minimum: 0 },
@@ -238,7 +238,8 @@ function capabilities() {
       exercise_fields: Object.keys(exerciseProps),
       patch_fields: Object.keys(patchProps),
       limits: {
-        exercises_per_routine: '1–12',
+        exercises_per_routine: 'at least 1, no artificial cap (openGym itself has none)',
+        duplicate_exercise_ids: 'allowed in one routine; edit and superset actions address slots by index',
         actions_per_preview: '1–30',
         sets: '1–20',
         reps: '1–100',
@@ -292,6 +293,8 @@ function capabilities() {
         'apply checks the document revision and refuses stale proposals',
         'every write creates a backup (last 30 kept in store/backups)',
         'writes can be disabled with OPENGYM_ALLOW_WRITES=0',
+        'request bodies are capped at 4 MB; unknown exercise/patch fields are refused',
+        'every exercise goes through buildEntry (mode, ranges, id) before a proposal exists',
       ],
       docs: ['README.md', 'README-zh-CN.md', 'GPT-INSTRUCTIONS.md', 'CHANGELOG.md'],
     },
@@ -460,7 +463,7 @@ export const TOOLS = [
   {
     name: 'plan_preview',
     title: 'Preview a plan change',
-    description: 'Dry-run only. Validates a list of edits and returns an exact human-readable change list plus a short-lived proposal_id. Nothing is written. Supported actions: create_routine (1–12 exercises), update_routine, delete_routine, set_exercise, add/remove/move/replace_exercise, set_superset, clear_superset, assign_weekday, override_date, set_progression, add_bodyweight, log_measurement, set_measurement_fields. Full openGym exercise model, not just a set count: mode=reps/time/cardio (cardio needs minutes + speed, optional incline), reps_min/reps_max, seconds, weight, rest_sec, side, bodyweight, assisted, db_load, supersets, plus warmup_sets (warm-up ramp, max 5), warmup_rest_sec, inc, deload_factor, backoff, last_to_failure, sets_max, per-exercise progression, intensifier (dropset/restpause) and pyramid/pyramid_weight/pyramid_rest for a different rep or weight on every set. Body measurements go through the same preview → confirm → apply flow with log_measurement / set_measurement_fields. Exercise IDs must come from search_exercises. After this, show the changes and ask the user; only then call plan_apply.',
+    description: 'Dry-run only. Validates a list of edits and returns an exact human-readable change list plus a short-lived proposal_id. Nothing is written. Supported actions: create_routine (at least 1 exercise; no artificial cap and duplicate exercise ids allowed, since every edit addresses a slot by index), update_routine, delete_routine, set_exercise, add/remove/move/replace_exercise, set_superset, clear_superset, assign_weekday, override_date, set_progression, add_bodyweight, log_measurement, set_measurement_fields. Full openGym exercise model, not just a set count: mode=reps/time/cardio (cardio needs minutes + speed, optional incline), reps_min/reps_max, seconds, weight, rest_sec, side, bodyweight, assisted, db_load, supersets, plus warmup_sets (warm-up ramp, max 5), warmup_rest_sec, inc, deload_factor, backoff, last_to_failure, sets_max, per-exercise progression, intensifier (dropset/restpause) and pyramid/pyramid_weight/pyramid_rest for a different rep or weight on every set. Body measurements go through the same preview → confirm → apply flow with log_measurement / set_measurement_fields. Exercise IDs must come from search_exercises. After this, show the changes and ask the user; only then call plan_apply.',
     inputSchema: obj({ actions: { type: 'array', minItems: 1, maxItems: 30, items: ACTION } }, ['actions']),
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     handler: ({ actions }) => {

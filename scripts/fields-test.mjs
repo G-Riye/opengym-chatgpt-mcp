@@ -8,6 +8,7 @@ import { applyActions } from '../src/plan.mjs';
 import { planView, measurementsView, workoutView, exerciseHistory } from '../src/state.mjs';
 import { previewSession } from '../src/session.mjs';
 import { muscleBalance } from '../src/balance.mjs';
+import { isCardio } from '../src/exercises.mjs';
 
 const SELF = path.resolve(import.meta.dirname, '..');
 const ROOT = path.resolve(SELF, '..');
@@ -233,5 +234,70 @@ check('muscle balance ranked', Array.isArray(balance.muscles) && balance.muscles
   balance.muscles.slice(0, 3).map(m => `${m.name_zh || m.name}=${m.weekly_sets}`).join(', '));
 check('muscle balance has labels', !!balance.muscles[0]?.name_zh, balance.muscles[0]?.name_zh);
 
+
+/* ---------- 1.4.4: no artificial exercise cap, duplicate ids, warm-up rows ---------- */
+
+/* openGym's own routine editor has no exercise-count cap and accepts the same exercise more
+   than once (lib/routines.js routineSlotIndex maps a session row to its slot among the twins).
+   The connector must mirror that instead of an invented 12 limit, while every entry is still
+   validated field by field and preview_session keeps inserting the app's warm-up ramp. */
+const seedIds = (S.routines || []).flatMap(r => (r.ex || []).map(e => e.id)).filter(Boolean);
+const uniqIds = [...new Set(seedIds)].filter(id => !isCardio(id));
+if (uniqIds.length < 2) throw new Error('fields-test needs at least 2 known exercise ids in the live state');
+const mkExercises = n => Array.from({ length: n }, (_, i) => {
+  const out = { exercise_id: uniqIds[i % uniqIds.length], sets: 3, reps: 8, weight: 40, rest_sec: 120 };
+  if (i === 0) out.warmup_sets = 3;
+  return out;
+});
+
+const { state: s15 } = applyActions(S, [{ type: 'create_routine', name: 'CAP15 TEST 请勿写入', exercises: mkExercises(15) }]);
+const r15 = (s15.routines || []).find(r => r.name === 'CAP15 TEST 请勿写入');
+check('15-exercise routine accepted (no 12 cap)', r15?.ex?.length === 15, `len=${r15?.ex?.length}`);
+
+const { state: s20 } = applyActions(S, [{ type: 'create_routine', name: 'CAP20 TEST 请勿写入', exercises: mkExercises(20) }]);
+const r20 = (s20.routines || []).find(r => r.name === 'CAP20 TEST 请勿写入');
+check('20-exercise routine accepted', r20?.ex?.length === 20, `len=${r20?.ex?.length}`);
+
+const { state: s21 } = applyActions(s20, [{ type: 'add_exercise', routine_id: r20.id, exercise: { exercise_id: uniqIds[0], sets: 3, reps: 5, weight: 50 } }]);
+const r21 = (s21.routines || []).find(r => r.id === r20.id);
+check('add_exercise past 20 accepted', r21?.ex?.length === 21, `len=${r21?.ex?.length}`);
+
+const { state: sDup } = applyActions(S, [{
+  type: 'create_routine',
+  name: 'DUP TEST 请勿写入',
+  exercises: [
+    { exercise_id: uniqIds[0], sets: 3, reps: 8, weight: 40 },
+    { exercise_id: uniqIds[0], sets: 3, reps: 5, weight: 45 },
+  ],
+}]);
+const rDup = (sDup.routines || []).find(r => r.name === 'DUP TEST 请勿写入');
+check('duplicate exercise ids allowed in one routine', rDup?.ex?.length === 2 && rDup.ex[0].id === rDup.ex[1].id,
+  JSON.stringify(rDup?.ex?.map(e => e.id)));
+
+const { state: sDup2 } = applyActions(sDup, [{ type: 'set_exercise', routine_id: rDup.id, index: 1, patch: { reps: 6 } }]);
+const rDup2 = (sDup2.routines || []).find(r => r.id === rDup.id);
+check('slot index addresses the right twin', rDup2?.ex?.[0]?.reps === 8 && rDup2?.ex?.[1]?.reps === 6,
+  `${rDup2?.ex?.[0]?.reps}/${rDup2?.ex?.[1]?.reps}`);
+
+const shownDup = planView(sDup2).routines.find(r => r.routine_id === rDup.id)?.exercises || [];
+check('read model shows both twins', shownDup.length === 2 && shownDup[0].exercise_id === shownDup[1].exercise_id,
+  shownDup.map(e => e.exercise_id).join(','));
+
+const capPreview = previewSession(s15, { routine_id: r15.id });
+const capRoutine = capPreview.routines?.[0];
+check('preview_session builds all 15 exercises', capRoutine?.exercises?.length === 15, `${capRoutine?.exercises?.length}`);
+const warmRows = (capRoutine?.exercises?.[0]?.rows || []).filter(r => r.kind === 'warmup');
+check('preview_session inserts the warm-up ramp',
+  warmRows.length === 3 && capRoutine?.exercises?.[0]?.row_counts?.warmup === 3, `warmup=${warmRows.length}`);
+
+const preview20 = previewSession(s20, { routine_id: r20.id });
+check('preview_session builds all 20 exercises', preview20.routines?.[0]?.exercises?.length === 20,
+  `${preview20.routines?.[0]?.exercises?.length}`);
+
+/* Write safety kept: field, shape and action-list validation still refuse junk. */
+rejects('rejects an unknown exercise field', [{ type: 'create_routine', name: 'X', exercises: [{ exercise_id: uniqIds[0], bogus: 1 }] }]);
+rejects('rejects an exercise without id', [{ type: 'create_routine', name: 'X', exercises: [{ sets: 3, reps: 8 }] }]);
+rejects('rejects an empty routine', [{ type: 'create_routine', name: 'X', exercises: [] }]);
+rejects('rejects 31 preview actions', Array.from({ length: 31 }, () => ({ type: 'update_routine', routine_id: (S.routines || [])[0]?.id })));
 
 console.log(`\nrevision in memory: ${S._rev} (unchanged - nothing was written)`);

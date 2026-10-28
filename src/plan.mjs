@@ -391,19 +391,17 @@ export function applyActions(S, actions) {
     if (type === 'create_routine') {
       const name = text(action.name, 60, 'name');
       if (next.routines.some(r => r.id === action.routine_id)) fail('routine_id 已存在');
-      if (!Array.isArray(action.exercises) || action.exercises.length < 1 || action.exercises.length > 12) {
-        fail('create_routine 需要 1–12 个 exercises');
+      // No artificial cap: openGym's own routine editor has none, and the same exercise id may
+      // appear more than once in a routine (the app maps a session row to its slot by position
+      // among the twins, lib/routines.js routineSlotIndex). Only "at least one" is required;
+      // every entry still goes through buildEntry, so fields, modes and ranges are validated.
+      if (!Array.isArray(action.exercises) || action.exercises.length < 1) {
+        fail('create_routine 需要至少 1 个 exercises');
       }
       const id = typeof action.routine_id === 'string' && action.routine_id
         ? text(action.routine_id, 64, 'routine_id') : newId('gpt');
       if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) fail('routine_id 只能包含字母数字、下划线和连字符');
-      const seen = new Set();
-      const ex = action.exercises.map(item => {
-        const entry = buildEntry(next, item);
-        if (seen.has(entry.id)) fail(`同一个模板不能重复放入动作 ${entry.id}`);
-        seen.add(entry.id);
-        return entry;
-      });
+      const ex = action.exercises.map(item => buildEntry(next, item));
       const routine = { id, name, emoji: action.emoji ? text(action.emoji, 32, 'emoji') : 'figureStrength',
         prog: action.progression ? oneOf(action.progression, [...POLICIES], 'progression') : 'off', ex };
       next.routines.push(routine);
@@ -461,9 +459,7 @@ export function applyActions(S, actions) {
 
     if (type === 'add_exercise') {
       const routine = routineOf(next, action.routine_id);
-      if (routine.ex.length >= 12) fail('一个模板最多 12 个动作');
       const entry = buildEntry(next, action.exercise);
-      if (routine.ex.some(e => e.id === entry.id)) fail(`模板里已有动作 ${entry.id}`);
       const index = action.index == null ? routine.ex.length : int(action.index, 0, routine.ex.length, 'index');
       routine.ex.splice(index, 0, entry);
       note(`给「${routine.name}」加动作：${entryLabel(next, entry)}（第 ${index + 1} 位）`);
@@ -496,7 +492,6 @@ export function applyActions(S, actions) {
       const routine = routineOf(next, action.routine_id);
       const index = int(action.index, 0, routine.ex.length - 1, 'index');
       const entry = buildEntry(next, action.exercise);
-      if (routine.ex.some((e, j) => j !== index && e.id === entry.id)) fail('替换后会出现重复动作');
       const before = entryLabel(next, routine.ex[index]);
       routine.ex[index] = entry;
       note(`替换「${routine.name}」第 ${index + 1} 个动作：${before} → ${entryLabel(next, entry)}`);
