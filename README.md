@@ -73,6 +73,26 @@ Full Chinese guide: [`README-zh-CN.md`](README-zh-CN.md).
 Write safety: preview never writes, apply refuses stale proposals (revision check),
 every write creates a backup in `store/backups/` (last 30 kept).
 
+### What a plan edit can prescribe
+
+Every field openGym's own editor stores on a routine exercise is reachable through
+`plan_preview` / `plan_apply`:
+
+| Field | Meaning |
+|---|---|
+| `sets`, `reps`, `reps_min`, `reps_max` | flat prescription / rep range |
+| `weight`, `mode`, `seconds`, `rest_sec` | load, reps vs timed hold, rest |
+| `warmup_sets`, `warmup_rest_sec` | warm-up ramp (0–5 sets) and its own rest |
+| `pyramid`, `pyramid_weight`, `pyramid_rest` | **per-set** targets, e.g. `[12,10,8,"max",12]` with a weight and rest for each set |
+| `inc`, `deload_factor`, `backoff` | progression step, deload %, back-off sets |
+| `last_to_failure`, `intensifier` | last set to failure, drop-sets, rest-pause |
+| `progression` | per-exercise override of the routine rule |
+| `side`, `bodyweight`, `assisted`, `db_load` | unilateral, bodyweight, assisted, dumbbell load semantics |
+| `note`, supersets (`sg`, `sgName`, `sgRest`) | coaching cue and superset grouping |
+
+`pyramid` is the only representation of per-set work: giving it sets `sets` to the list
+length and replaces `reps`, so a shared "12 · 10 · 8 · Max · 12" round-trips exactly.
+
 ## Security model
 
 - The MCP token lives in `secrets/mcp-token`; the Caddy/openGym token is derived from

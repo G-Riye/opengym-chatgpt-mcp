@@ -89,9 +89,28 @@ function exerciseLine(S, ex, index) {
     mode,
     reps: ex.reps ?? null,
     reps_min: ex.repsMin ?? null,
+    reps_max: ex.repsMax ?? null,
+    sets_max: ex.setsMax ?? null,
     seconds: ex.sec ?? null,
     weight: ex.weight ?? null,
     rest_sec: ex.restSec ?? null,
+    warmup_sets: ex.warmupSets ?? null,
+    warmup_rest_sec: ex.warmupRestSec ?? null,
+    inc: ex.inc ?? null,
+    deload_factor: ex.deloadFactor ?? null,
+    backoff: ex.backoff === true,
+    last_to_failure: ex.lastToFailure === true,
+    progression: ex.prog || null,
+    intensifier: ex.intensifier && typeof ex.intensifier === 'object'
+      ? (ex.intensifier.type === 'dropset'
+        ? { type: 'dropset', count: ex.intensifier.count ?? null, pct: ex.intensifier.pct ?? null }
+        : ex.intensifier.type === 'restpause'
+          ? { type: 'restpause', total_reps: ex.intensifier.totalReps ?? null, rest_sec: ex.intensifier.restSec ?? null }
+          : null)
+      : null,
+    pyramid: Array.isArray(ex.pyramid) && ex.pyramid.length ? [...ex.pyramid] : null,
+    pyramid_weight: Array.isArray(ex.pyramidWeight) && ex.pyramidWeight.length ? [...ex.pyramidWeight] : null,
+    pyramid_rest: Array.isArray(ex.pyramidRest) && ex.pyramidRest.length ? [...ex.pyramidRest] : null,
     note: typeof ex.note === 'string' && ex.note ? ex.note.slice(0, 800) : null,
     side: !!ex.side,
     bodyweight: ex.bodyweight ?? meta.is_bodyweight,

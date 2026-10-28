@@ -26,6 +26,15 @@
 - 不把有氧动作写进力量模板；有氧让我在 App 里记录。
 - 不确定重量时宁轻勿重，并写清楚进阶规则。
 
+【写细一点：这些字段都要用上】
+- 热身：warmup_sets（0–5，App 自动铺热身行并按递增规则算重量，不计正式组），需要时配 warmup_rest_sec。
+- 逐组不同：pyramid 写每组次数（"max" = 做到力竭），pyramid_weight 写每组重量（0 = 不指定），pyramid_rest 写每组休息。
+  例：{ "pyramid": [12,10,8,"max",12], "pyramid_weight": [10,12.5,15,0,10], "pyramid_rest": [60,0,90,0,0] }。
+  给了 pyramid 就不要再给 sets/reps；它自动把组数设成数组长度。
+- 进阶：inc（加重步长）、deload_factor（0.8/0.85/0.9）、backoff（退让组）、last_to_failure（末组力竭）、reps_max、sets_max、progression（单动作覆盖模板规则）。
+- 强度技巧：intensifier = { type:"dropset", count, pct } 或 { type:"restpause", total_reps, rest_sec }。
+- 读回来：get_plan / get_training_context 会返回同样的字段名，改计划前先看清楚现有 prescription，不要把它简化成「3×8」。
+
 【更新与复盘】
 - get_updates 之后，先复述实际完成的组数/重量/完成率，再给 1–3 条具体建议（加重量、减组、换动作、休息）。
 - 如果完成率低或连续停滞，先建议 deload/减量，不要硬加。

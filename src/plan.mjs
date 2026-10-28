@@ -51,6 +51,136 @@ const oneOf = (v, list, label) => {
   return v;
 };
 
+/* openGym's own limits, mirrored from the frontend so a preview can never produce a
+   document the app would refuse to open. */
+const WARMUP_MAX = 5;          // history.js MAX_PLANNED_WARMUPS
+const PYRAMID_MAX_SETS = 10;   // pyramid.js MAX_PYRAMID_SETS
+const PYRAMID_MAX = 'max';     // pyramid.js PYRAMID_MAX
+const DELOAD_FACTORS = [0.8, 0.85, 0.9];
+const INTENSIFIER_KEYS = ['type', 'count', 'pct', 'total_reps', 'rest_sec'];
+
+function cleanIntensifier(input) {
+  if (input == null) return null;
+  if (!isObj(input)) fail('intensifier 必须是对象，或 null 表示清除');
+  for (const key of Object.keys(input)) {
+    if (!INTENSIFIER_KEYS.includes(key)) fail(`intensifier 里不认识字段 ${key}`);
+  }
+  const type = oneOf(input.type, ['dropset', 'restpause'], 'intensifier.type');
+  if (type === 'dropset') {
+    return {
+      type,
+      count: input.count == null ? 1 : int(input.count, 1, 10, 'intensifier.count'),
+      pct: input.pct == null ? 20 : num(input.pct, 5, 50, 'intensifier.pct'),
+    };
+  }
+  return {
+    type,
+    totalReps: input.total_reps == null ? 10 : int(input.total_reps, 1, 100, 'intensifier.total_reps'),
+    restSec: input.rest_sec == null ? 15 : int(input.rest_sec, 5, 120, 'intensifier.rest_sec'),
+  };
+}
+
+function cleanPyramid(list) {
+  if (!Array.isArray(list) || list.length < 1) fail('pyramid 必须是 1–10 个组目标');
+  if (list.length > PYRAMID_MAX_SETS) fail(`pyramid 最多 ${PYRAMID_MAX_SETS} 组`);
+  return list.map((value, i) => {
+    if (value === PYRAMID_MAX) return PYRAMID_MAX;
+    const n = Number(value);
+    if (!Number.isInteger(n) || n < 1 || n > 100) fail(`pyramid[${i}] 必须是 1–100 的整数或 "max"`);
+    return n;
+  });
+}
+
+/* pyramid_weight / pyramid_rest are index-aligned with pyramid and short lists are
+   padded with 0 = "not set", which is exactly how the app stores them. */
+function alignList(input, length, label, { lo, hi, integer }) {
+  if (input == null) return [];
+  if (!Array.isArray(input)) fail(`${label} 必须是数组`);
+  if (input.length > length) fail(`${label} 最多 ${length} 项（和 pyramid 一样长）`);
+  const out = Array.from({ length }, (_, i) => {
+    if (i >= input.length || input[i] == null) return 0;
+    return integer ? int(input[i], lo, hi, `${label}[${i}]`) : num(input[i], lo, hi, `${label}[${i}]`);
+  });
+  return out;
+}
+
+function ensureRepRange(entry) {
+  if (entry.mode === 'time') return entry;
+  if (entry.repsMin != null && entry.reps != null && entry.repsMin > entry.reps) {
+    fail('reps_min 不能大于 reps');
+  }
+  if (entry.repsMax != null) {
+    const lo = entry.repsMin ?? entry.reps;
+    if (lo != null && entry.repsMax < lo) fail('reps_max 不能小于 reps / reps_min');
+  }
+  return entry;
+}
+
+/* Every advanced field the openGym editor can store on a routine exercise.
+   `null` means "clear it", while omitted means "leave it alone" (patch only). */
+function applyAdvanced(entry, input) {
+  if ('warmup_sets' in input) {
+    const n = input.warmup_sets == null ? 0 : int(input.warmup_sets, 0, WARMUP_MAX, 'warmup_sets');
+    if (n > 0) entry.warmupSets = n; else delete entry.warmupSets;
+  }
+  if ('warmup_rest_sec' in input) {
+    const n = input.warmup_rest_sec == null ? 0 : int(input.warmup_rest_sec, 0, 900, 'warmup_rest_sec');
+    if (n > 0) entry.warmupRestSec = n; else delete entry.warmupRestSec;
+  }
+  if ('inc' in input) {
+    const n = input.inc == null ? 0 : num(input.inc, 0, 100, 'inc');
+    if (n > 0) entry.inc = n; else delete entry.inc;
+  }
+  if ('deload_factor' in input) {
+    if (input.deload_factor == null) delete entry.deloadFactor;
+    else entry.deloadFactor = oneOf(Number(input.deload_factor), DELOAD_FACTORS, 'deload_factor');
+  }
+  if ('backoff' in input) {
+    if (input.backoff === true) entry.backoff = true; else delete entry.backoff;
+  }
+  if ('last_to_failure' in input) {
+    if (input.last_to_failure === true) entry.lastToFailure = true; else delete entry.lastToFailure;
+  }
+  if ('progression' in input) {
+    if (input.progression == null) delete entry.prog;
+    else entry.prog = oneOf(input.progression, [...POLICIES], 'progression');
+  }
+  if ('sets_max' in input) {
+    const n = input.sets_max == null ? 0 : int(input.sets_max, 1, 10, 'sets_max');
+    if (n > 0) entry.setsMax = n; else delete entry.setsMax;
+  }
+  if ('reps_max' in input) {
+    if (input.reps_max == null) delete entry.repsMax;
+    else entry.repsMax = int(input.reps_max, 1, 100, 'reps_max');
+  }
+  if ('intensifier' in input) {
+    const value = cleanIntensifier(input.intensifier);
+    if (value) entry.intensifier = value; else delete entry.intensifier;
+  }
+  if ('pyramid' in input) {
+    if (input.pyramid == null) {
+      delete entry.pyramid;
+      delete entry.pyramidWeight;
+      delete entry.pyramidRest;
+    } else {
+      if ((entry.mode || 'reps') !== 'reps') fail('pyramid 只能用于 reps 动作，计时动作请用 sets/seconds');
+      const targets = cleanPyramid(input.pyramid);
+      entry.pyramid = targets;
+      entry.sets = targets.length;
+      const firstReps = targets.find(v => v !== PYRAMID_MAX);
+      if (firstReps != null) entry.reps = firstReps;
+      delete entry.repsMin;
+      const weights = alignList(input.pyramid_weight, targets.length, 'pyramid_weight', { lo: 0, hi: 1000, integer: false });
+      if (weights.some(w => w > 0)) entry.pyramidWeight = weights; else delete entry.pyramidWeight;
+      const rests = alignList(input.pyramid_rest, targets.length, 'pyramid_rest', { lo: 0, hi: 900, integer: true });
+      if (rests.some(r => r > 0)) entry.pyramidRest = rests; else delete entry.pyramidRest;
+    }
+  } else if (('pyramid_weight' in input) || ('pyramid_rest' in input)) {
+    fail('pyramid_weight / pyramid_rest 必须和 pyramid 一起给');
+  }
+  return entry;
+}
+
 function routineOf(S, id) {
   const routine = routinesOf(S).find(r => r.id === id);
   if (!routine) fail(`找不到训练模板 ${id}；请先调用 get_plan 获取有效 routine_id`, 'not_found');
@@ -66,8 +196,13 @@ function exerciseMeta(S, rawId) {
   return describe(S, id);
 }
 
-const STORE_KEYS = ['sets', 'mode', 'reps', 'repsMin', 'sec', 'weight', 'restSec', 'note', 'side', 'bodyweight', 'assisted', 'dbLoad'];
-const INPUT_KEYS = ['sets', 'mode', 'reps', 'reps_min', 'seconds', 'weight', 'rest_sec', 'note', 'side', 'bodyweight', 'assisted', 'db_load'];
+const STORE_KEYS = ['sets', 'mode', 'reps', 'repsMin', 'repsMax', 'setsMax', 'sec', 'weight', 'restSec',
+  'note', 'side', 'bodyweight', 'assisted', 'dbLoad', 'prog', 'inc', 'deloadFactor', 'backoff',
+  'lastToFailure', 'warmupSets', 'warmupRestSec', 'intensifier', 'pyramid', 'pyramidWeight', 'pyramidRest'];
+const INPUT_KEYS = ['sets', 'mode', 'reps', 'reps_min', 'reps_max', 'sets_max', 'seconds', 'weight',
+  'rest_sec', 'note', 'side', 'bodyweight', 'assisted', 'db_load', 'progression', 'inc',
+  'deload_factor', 'backoff', 'last_to_failure', 'warmup_sets', 'warmup_rest_sec',
+  'intensifier', 'pyramid', 'pyramid_weight', 'pyramid_rest'];
 
 function buildEntry(S, input) {
   if (!isObj(input)) fail('exercise 必须是对象');
@@ -96,6 +231,8 @@ function buildEntry(S, input) {
   if (input.assisted != null) entry.assisted = bool(input.assisted, 'assisted');
   else if (meta.is_assisted) entry.assisted = true;
   if (input.db_load != null) entry.dbLoad = oneOf(input.db_load, ['each', 'total'], 'db_load');
+  applyAdvanced(entry, input);
+  ensureRepRange(entry);
   return entry;
 }
 
@@ -135,15 +272,36 @@ function patchEntry(S, old, patch) {
   if (patch.bodyweight != null) next.bodyweight = bool(patch.bodyweight, 'bodyweight');
   if (patch.assisted != null) next.assisted = bool(patch.assisted, 'assisted');
   if (patch.db_load != null) next.dbLoad = oneOf(patch.db_load, ['each', 'total'], 'db_load');
+  applyAdvanced(next, patch);
+  ensureRepRange(next);
   if (next.note === undefined) delete next.note;
   return next;
 }
 
 function entryLabel(S, entry) {
   const meta = describe(S, entry.id);
-  if (entry.mode === 'time') return `${meta.name} ${entry.sets}×${entry.sec}s`;
-  const reps = entry.repsMin && entry.repsMin !== entry.reps ? `${entry.repsMin}–${entry.reps}` : `${entry.reps}`;
-  return `${meta.name} ${entry.sets}×${reps}${entry.weight ? ` @${entry.weight}${S.unit || 'kg'}` : ''}`;
+  const bits = [];
+  if (Array.isArray(entry.pyramid) && entry.pyramid.length) {
+    const plan = entry.pyramid
+      .map((value, i) => {
+        const weight = Array.isArray(entry.pyramidWeight) ? Number(entry.pyramidWeight[i]) || 0 : 0;
+        const reps = value === PYRAMID_MAX ? 'Max' : value;
+        return weight > 0 ? `${reps}@${weight}` : String(reps);
+      })
+      .join('·');
+    bits.push(`金字塔 ${plan}`);
+  } else if (entry.mode === 'time') {
+    bits.push(`${entry.sets}×${entry.sec}s`);
+  } else {
+    const reps = entry.repsMin && entry.repsMin !== entry.reps ? `${entry.repsMin}–${entry.reps}` : `${entry.reps}`;
+    bits.push(`${entry.sets}×${reps}${entry.weight ? ` @${entry.weight}${S.unit || 'kg'}` : ''}`);
+  }
+  if (entry.warmupSets) bits.push(`热身${entry.warmupSets}组`);
+  if (entry.intensifier?.type === 'dropset') bits.push(`递减${entry.intensifier.count}次/${entry.intensifier.pct}%`);
+  if (entry.intensifier?.type === 'restpause') bits.push(`休息暂停共${entry.intensifier.totalReps}次`);
+  if (entry.lastToFailure) bits.push('末组力竭');
+  if (entry.backoff) bits.push('退让组');
+  return `${meta.name} ${bits.join('，')}`;
 }
 
 function newId(prefix = 'gpt') {

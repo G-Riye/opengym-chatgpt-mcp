@@ -15,6 +15,84 @@ const obj = (properties = {}, required = []) => ({
   type: 'object', properties, required, additionalProperties: false,
 });
 
+/* Fields that only exist because openGym's editor stores them on the routine exercise:
+   warm-up ramp, per-set (pyramid) targets, drop-sets / rest-pause, back-off, deload. */
+const ADVANCED_PROPS = {
+  warmup_sets: {
+    type: 'integer', minimum: 0, maximum: 5,
+    description: 'Warm-up sets the app inserts before the work sets (openGym max 5). 0 removes them. The app picks the ramp weights itself.',
+  },
+  warmup_rest_sec: {
+    type: 'integer', minimum: 0, maximum: 900,
+    description: 'Rest between warm-up sets; 0 falls back to rest_sec.',
+  },
+  inc: {
+    type: 'number', minimum: 0, maximum: 100,
+    description: 'Load increment the progression rule adds (kg/lb), e.g. 2.5.',
+  },
+  deload_factor: {
+    type: 'number', enum: [0.8, 0.85, 0.9],
+    description: 'Epley deload percentage used when the rule backs off (0.9 is openGym default).',
+  },
+  backoff: {
+    type: 'boolean',
+    description: 'Add back-off work after the last work set (steps down by inc).',
+  },
+  last_to_failure: {
+    type: 'boolean',
+    description: 'Prescribe the last work set to failure.',
+  },
+  sets_max: {
+    type: 'integer', minimum: 1, maximum: 10,
+    description: 'Set ceiling for triple progression (how many sets the rule may climb to).',
+  },
+  reps_max: {
+    type: 'integer', minimum: 1, maximum: 100,
+    description: 'Top of the rep range used by double/triple progression; must be >= reps / reps_min.',
+  },
+  progression: {
+    type: 'string', enum: ['off', 'linear', 'greyskull', 'double', 'triple', 'time'],
+    description: 'Per-exercise override of the routine progression.',
+  },
+  intensifier: {
+    anyOf: [
+      {
+        type: 'object', additionalProperties: false, required: ['type'],
+        properties: {
+          type: { type: 'string', enum: ['dropset'] },
+          count: { type: 'integer', minimum: 1, maximum: 10, description: 'How many drops after the work set.' },
+          pct: { type: 'number', minimum: 5, maximum: 50, description: 'Percent of the work weight shed per drop.' },
+        },
+      },
+      {
+        type: 'object', additionalProperties: false, required: ['type'],
+        properties: {
+          type: { type: 'string', enum: ['restpause'] },
+          total_reps: { type: 'integer', minimum: 1, maximum: 100 },
+          rest_sec: { type: 'integer', minimum: 5, maximum: 120 },
+        },
+      },
+      { type: 'null' },
+    ],
+    description: 'Drop-sets or rest-pause prescribed with the exercise. null clears it.',
+  },
+  pyramid: {
+    type: 'array', minItems: 1, maxItems: 10,
+    items: { anyOf: [{ type: 'integer', minimum: 1, maximum: 100 }, { type: 'string', enum: ['max'] }] },
+    description: 'Per-set rep targets, e.g. [12,10,8,"max",12] ("max" = as many reps as possible). Supplying it makes the set count = list length and replaces sets/reps; use it whenever the user wants a different rep count per set.',
+  },
+  pyramid_weight: {
+    type: 'array', maxItems: 10,
+    items: { type: 'number', minimum: 0, maximum: 1000 },
+    description: 'Per-set planned weight, index-aligned with pyramid (0 = no planned weight for that set). Needs pyramid.',
+  },
+  pyramid_rest: {
+    type: 'array', maxItems: 10,
+    items: { type: 'integer', minimum: 0, maximum: 900 },
+    description: 'Per-set rest seconds, index-aligned with pyramid (0 = use rest_sec). Needs pyramid.',
+  },
+};
+
 const EXERCISE_INPUT = {
   type: 'object',
   properties: {
@@ -31,6 +109,7 @@ const EXERCISE_INPUT = {
     bodyweight: { type: 'boolean' },
     assisted: { type: 'boolean' },
     db_load: { type: 'string', enum: ['each', 'total'] },
+    ...ADVANCED_PROPS,
   },
   required: ['exercise_id'],
   additionalProperties: false,
@@ -51,6 +130,7 @@ const PATCH = {
     bodyweight: { type: 'boolean' },
     assisted: { type: 'boolean' },
     db_load: { type: 'string', enum: ['each', 'total'] },
+    ...ADVANCED_PROPS,
   },
   additionalProperties: false,
 };
@@ -196,7 +276,7 @@ export const TOOLS = [
   {
     name: 'plan_preview',
     title: 'Preview a plan change',
-    description: 'Dry-run only. Validates a list of plan edits and returns an exact human-readable change list plus a short-lived proposal_id. Nothing is written. Supported actions: create_routine (1–12 exercises), update_routine, delete_routine, set_exercise, add/remove/move/replace_exercise, set_superset, clear_superset, assign_weekday, override_date, set_progression, add_bodyweight. Rich fields are preserved: mode=time, reps_min, seconds, rest_sec, side, bodyweight, assisted, db_load, supersets. Exercise IDs must come from search_exercises. After this, show the changes and ask the user; only then call plan_apply.',
+    description: 'Dry-run only. Validates a list of plan edits and returns an exact human-readable change list plus a short-lived proposal_id. Nothing is written. Supported actions: create_routine (1–12 exercises), update_routine, delete_routine, set_exercise, add/remove/move/replace_exercise, set_superset, clear_superset, assign_weekday, override_date, set_progression, add_bodyweight. Full openGym exercise model, not just a set count: mode=time, reps_min/reps_max, seconds, weight, rest_sec, side, bodyweight, assisted, db_load, supersets, plus warmup_sets (warm-up ramp, max 5), warmup_rest_sec, inc, deload_factor, backoff, last_to_failure, sets_max, per-exercise progression, intensifier (dropset/restpause) and pyramid/pyramid_weight/pyramid_rest for a different rep or weight on every set. Exercise IDs must come from search_exercises. After this, show the changes and ask the user; only then call plan_apply.',
     inputSchema: obj({ actions: { type: 'array', minItems: 1, maxItems: 30, items: ACTION } }, ['actions']),
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     handler: ({ actions }) => {

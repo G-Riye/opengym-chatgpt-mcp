@@ -61,6 +61,32 @@
 
 计划写入支持的动作：`create_routine`、`update_routine`、`delete_routine`、`set_exercise`、`add/remove/move/replace_exercise`、`set_superset`、`clear_superset`、`assign_weekday`、`override_date`、`set_progression`、`add_bodyweight`。
 
+### 2.1 一个动作能写到多细（1.1.0 起）
+
+openGym 编辑器里能存的字段，MCP 现在都能写、也能读回来：
+
+| 字段 | 含义 |
+|---|---|
+| `sets` / `reps` / `reps_min` / `reps_max` | 平铺的组数、次数、次数区间 |
+| `weight` / `mode` / `seconds` / `rest_sec` | 重量、次数/计时、组间休息 |
+| `warmup_sets` / `warmup_rest_sec` | **热身组数（0–5，App 自己递增重量）和热身组间休息** |
+| `pyramid` / `pyramid_weight` / `pyramid_rest` | **逐组次数 / 逐组重量 / 逐组休息**，例：`[12,10,8,"max",12]` + `[40,50,60,0,40]` |
+| `inc` / `deload_factor` / `backoff` | 进阶加重步长、减载百分比、退让组 |
+| `last_to_failure` / `intensifier` | 末组力竭；递减组 `{type:"dropset",count,pct}` / 休息暂停 `{type:"restpause",total_reps,rest_sec}` |
+| `progression` | 单个动作覆盖模板的进阶规则（off/linear/greyskull/double/triple/time） |
+| `side` / `bodyweight` / `assisted` / `db_load` | 单侧、自重、助力、哑铃「每只/合计」 |
+| `note` / 超级组（`sg`/`sgName`/`sgRest`） | 备注、超级组分组与组内休息 |
+
+**关键**：openGym 里没有「第 1 组 40kg、第 2 组 45kg」这种独立字段，逐组配置就是 `pyramid`
+（每组次数）+ `pyramid_weight`（每组重量）+ `pyramid_rest`（每组休息）。给了 `pyramid`，
+`sets` 自动等于数组长度、`reps` 自动取第一个数值目标，所以「12/10/8/Max/12」能一比一还原。
+
+**热身组的真实语义**：热身不是「正式组里的前几组」，而是每个动作的 `warmupSets` 设置；
+写入后 App 在你开始训练时会自动铺出对应数量的热身行（重量由 App 按递增规则算），
+不计入正式组、不影响容量统计。这也是之前 ChatGPT 说「MCP 写不了热身组」的原因——旧版没暴露这个字段。
+
+自检：`node scripts/fields-test.mjs`（31 项，纯内存，不写任何数据）、`node scripts/mcp-smoke.mjs`。
+
 ---
 
 ## 3. 快速开始（本机已验证）
