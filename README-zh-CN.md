@@ -52,7 +52,7 @@
 | `get_plan` | 只要计划；拿准确的 `routine_id` 和动作下标 |
 | `search_exercises` | 中文/英文搜 5,632 个内置动作 + 自定义动作；返回 `exercise_id`、部位、器械、是否自重/助力 |
 | `get_exercise_history` | 单个动作的最近训练、最好重量/次数、Epley 估算 1RM |
-| `get_results` | 日期区间内的已完成训练，逐组实际重量/次数/RIR/左右侧、完成率、容量、PR |
+| `get_results` | 日期区间内的已完成训练，逐组实际重量/次数/RIR/左右侧/组类型（递减组 `drops`、爆发组 `bursts`、`max`），完成率、容量、PR |
 | `get_measurements` | 体测：19 个内置围度/体脂 + 自定义项，最新一次、逐项曲线、历史记录 |
 | `get_updates` | **只返回上次之后新完成的训练**，并推进游标；对话开始时调用即可「更新到当前对话」 |
 | `plan_preview` | 只预览不写入：校验修改、返回中文变更清单 + 15 分钟有效的 `proposal_id` |
@@ -104,7 +104,40 @@ openGym 在你开始训练那一刻按正式重量算递增（3 组时 50% / 75%
 自定义项用 `custom:{"左小腿":36}`）或 `set_measurement_fields`（开关字段/新增自定义项），
 确认后同样 `plan_apply`，rev 冲突照样拒绝、写前照样备份。
 
-自检：`node scripts/fields-test.mjs`（57 项，纯内存，不写任何数据）、`node scripts/mcp-smoke.mjs`。
+自检：`node scripts/fields-test.mjs`（72 项，纯内存，不写任何数据）、`node scripts/mcp-smoke.mjs`。
+
+### 2.3 读「实际练了什么」：每组都有类型（1.3.0 起）
+
+以前训练记录只有一组 `weight/reps/done`，所以你实际做的**递减组**、**爆发组（休息暂停）**、
+**AMRAP 组**、热身组在 MCP 里读出来全是普通组。现在 `get_results` / `get_updates` /
+`get_training_context` 返回的每一组是：
+
+```json
+{
+  "weight": 60, "reps": 16, "done": true, "rir": 1,
+  "type": "restpause",
+  "bursts": [{ "reps": 10, "rest_sec": 15 }, { "reps": 4, "rest_sec": 15 }, { "reps": 2, "rest_sec": 15 }],
+  "burst_reps": 16
+}
+```
+
+| 字段 | 含义 |
+|---|---|
+| `type` | `straight` 普通组 / `dropset` 递减组 / `restpause` 休息暂停＝App 里的「爆发组」/ `warmup` 热身 |
+| `drops` | `[{weight, reps}]`，主组之后每一档递减 |
+| `bursts` / `burst_reps` | 爆发组的每一段（次数 + 秒数）与合计次数 |
+| `max` | `true` 表示 AMRAP（「Max」）组 |
+| `sides.L` / `sides.R` | 单侧动作左右各自同一套字段 |
+
+两个配套字段：动作上的 `set_summary` 是各类组的计数（`{straight:2, dropset:1, restpause:1, warmup:1, burst_reps:16}`），
+`prescribed` 是计划里写的强度技巧（`intensifier` / `warmup_sets`），用来区分「计划是休息暂停」和「实际做了休息暂停」。
+
+**别把爆发组当额外组数**：rest-pause 行的 `reps` 已经是「10+4+2=16」的和，爆发组是拆解，不是加组。
+`get_exercise_history` 里每次训练也多给了 `drop_sets`、`rest_pause_sets`、`burst_reps`。
+
+**注意「爆发组」这个词**：openGym 中文界面里的「⚡ + 爆发组」就是 Rest-pause（休息暂停）的 burst，
+数据层存成 `type:"restpause"` + `clusters`（MCP 里叫 `bursts`）。计划端写法是
+`intensifier: { type:"restpause", total_reps, rest_sec }`，App 开始训练时会按 `10+4+2+1` 这种次序自动拆段。
 
 ---
 

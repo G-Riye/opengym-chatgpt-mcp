@@ -12,7 +12,7 @@ import { readState, todayIso, pendingUpdates, sortedWorkouts, workoutView } from
 import { userInfo } from './opengym.mjs';
 import { exerciseCount } from './exercises.mjs';
 
-const VERSION = '1.2.1';
+const VERSION = '1.3.0';
 const PROTOCOL = '2025-06-18';
 const sessions = new Set();
 
@@ -29,7 +29,8 @@ export const INSTRUCTIONS = `你是 openGym 的训练助手，回答一律使用
 7. 不诊断伤病；疼痛时建议就医。
 8. 有氧动作可以写进计划：mode="cardio" + minutes（分钟）+ speed（速度），跑步机/走跑/椭圆可再加 incline（坡度 %）。非有氧动作不能设 cardio。
 9. 体测（围度/体脂）：先用 get_measurements 读现状和趋势；写入走同一条两步流程——plan_preview 里用 log_measurement（values 用厘米，bodyFat 用 %）记录，或 set_measurement_fields 开关字段/新增自定义项，然后确认后 plan_apply。
-10. 动作的 note（备注/口令）会随 get_plan、get_training_context、get_results、get_exercise_history 一起返回；改计划时不要把它删掉，除非用户要求。`;
+10. 动作的 note（备注/口令）会随 get_plan、get_training_context、get_results、get_exercise_history 一起返回；改计划时不要把它删掉，除非用户要求。
+11. 读训练数据时要看每组是什么类型：`type` = straight / dropset（递减组）/ restpause（休息暂停，也就是 App 里的“爆发组”）/ warmup；`drops` 是每次递减的重量和次数，`bursts` 是爆发组的每一段（次数 + 休息秒数），`max` 表示 AMRAP 组；单侧动作在 `sides.L/R` 里有同样的字段。动作上的 `set_summary` 是各类组的计数，`prescribed` 是计划里写的强度技巧。复述训练时要把这些讲清楚（例如“60×10+4+2，最后两段休息暂停”），不要把它们算成额外组数：rest-pause 行的 `reps` 已经包含爆发组。`;
 
 function tokenFile() { return path.join(config.secretsDir, 'mcp-token'); }
 

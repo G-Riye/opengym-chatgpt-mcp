@@ -5,7 +5,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { applyActions } from '../src/plan.mjs';
-import { planView, measurementsView } from '../src/state.mjs';
+import { planView, measurementsView, workoutView, exerciseHistory } from '../src/state.mjs';
 
 const SELF = path.resolve(import.meta.dirname, '..');
 const ROOT = path.resolve(SELF, '..');
@@ -155,5 +155,53 @@ const withNotes = planView(S).routines.flatMap(r => r.exercises).filter(x => x.n
 check('planView returns exercise notes', withNotes.length > 0, `${withNotes.length} notes`);
 const workoutWithNote = (S.workouts || []).flatMap(w => w.entries || []).filter(e => (e.note || e.target?.note));
 check('workout entries carry notes', workoutWithNote.length > 0, `${workoutWithNote.length} entries`);
+
+/* ---------- 1.3.0: per-set detail (drops / bursts / max / warm-up) ---------- */
+
+const synthetic = structuredClone(S);
+synthetic.workouts = [{
+  id: 'synthetic-1', d: '2026-10-28', name: 'SET TYPES', start: Date.parse('2026-10-28T10:00:00Z'), end: Date.parse('2026-10-28T11:00:00Z'),
+  entries: [{
+    id: '0025',
+    target: { sets: 3, reps: 8, weight: 60, intensifier: { type: 'restpause', totalReps: 16, restSec: 15 } },
+    sets: [
+      { w: 40, r: 8, done: true, phase: 'warmup', warmup: true },
+      { w: 60, r: 10, done: true },
+      { w: 60, r: 12, done: true, type: 'dropset', drops: [{ w: 50, r: 8 }, { w: 40, r: 6 }] },
+      { w: 60, r: 16, done: true, type: 'restpause', clusters: [{ r: 10, restSec: 15 }, { r: 4, restSec: 15 }, { r: 2, restSec: 15 }] },
+      { w: 60, r: 5, done: true, max: true },
+    ],
+  }, {
+    id: '0289',
+    target: { sets: 2, reps: 12, weight: 20 },
+    sets: [{
+      w: 20, r: 16, done: true, type: 'restpause',
+      sides: {
+        L: { w: 20, r: 16, done: true, type: 'restpause', clusters: [{ r: 10, restSec: 15 }, { r: 6, restSec: 15 }] },
+        R: { w: 20, r: 14, done: true, type: 'restpause', clusters: [{ r: 8, restSec: 15 }, { r: 6, restSec: 15 }] },
+      },
+    }],
+  }],
+}];
+const wv = workoutView(synthetic, synthetic.workouts[0], { detail: true });
+const bench = wv.exercises.find(x => x.exercise_id === '0025');
+const db = wv.exercises.find(x => x.exercise_id === '0289');
+check('set type warmup', bench.sets[0].type === 'warmup', bench.sets[0].type);
+check('set type straight', bench.sets[1].type === undefined, String(bench.sets[1].type));
+check('dropset exposed', bench.sets[2].type === 'dropset' && bench.sets[2].drops?.length === 2, JSON.stringify(bench.sets[2].drops));
+check('drop weights', bench.sets[2].drops[0].weight === 50 && bench.sets[2].drops[1].reps === 6);
+check('burst set exposed', bench.sets[3].type === 'restpause', String(bench.sets[3].type));
+check('bursts exposed', JSON.stringify(bench.sets[3].bursts) === JSON.stringify([{ reps: 10, rest_sec: 15 }, { reps: 4, rest_sec: 15 }, { reps: 2, rest_sec: 15 }]), JSON.stringify(bench.sets[3].bursts));
+check('burst_reps total', bench.sets[3].burst_reps === 16, String(bench.sets[3].burst_reps));
+check('max set flagged', bench.sets[4].max === true);
+check('set_summary counts', bench.set_summary?.restpause === 1 && bench.set_summary?.dropset === 1 && bench.set_summary?.warmup === 1, JSON.stringify(bench.set_summary));
+check('prescribed intensifier exposed', bench.prescribed?.intensifier?.type === 'restpause', JSON.stringify(bench.prescribed));
+check('per-side bursts', db.sets[0].sides.L.type === 'restpause' && db.sets[0].sides.L.burst_reps === 16 && db.sets[0].sides.R.burst_reps === 14, JSON.stringify(db.sets[0].sides.L));
+check('workout view totals', wv.sets_done === 7, `sets_done=${wv.sets_done}`);
+
+const histRow = exerciseHistory(synthetic, '0025', 1);
+check('history counts rest-pause sets', histRow.sessions[0]?.rest_pause_sets === 1, JSON.stringify(histRow.sessions[0]));
+check('history counts drop sets', histRow.sessions[0]?.drop_sets === 1);
+check('history burst reps', histRow.sessions[0]?.burst_reps === 16, String(histRow.sessions[0]?.burst_reps));
 
 console.log(`\nrevision in memory: ${S._rev} (unchanged - nothing was written)`);

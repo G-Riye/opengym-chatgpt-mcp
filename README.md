@@ -102,6 +102,33 @@ Warm-ups are a *count* (`warmup_sets`), not a list of weights: the app builds th
 the session starts (50 % / 75 % / 87.5 % of the working weight, never below the bar), so
 "warm-up set 1 = 5 kg" is a session row, not a plan field.
 
+### What a completed set looks like
+
+`get_results`, `get_updates` and `get_training_context` return one object per set, with what
+was actually done rather than just weight × reps:
+
+```json
+{
+  "weight": 60, "reps": 16, "done": true, "rir": 1,
+  "type": "restpause",
+  "bursts": [{ "reps": 10, "rest_sec": 15 }, { "reps": 4, "rest_sec": 15 }, { "reps": 2, "rest_sec": 15 }],
+  "burst_reps": 16
+}
+```
+
+| Key | Meaning |
+|---|---|
+| `type` | `straight`, `dropset` (递减组), `restpause` (爆发组 / rest-pause), `warmup` |
+| `drops` | `[{ weight, reps }]` — each drop below the main set |
+| `bursts` / `burst_reps` | the short-rest bursts of a rest-pause set, and their total reps |
+| `max` | `true` on an AMRAP ("Max") set |
+| `sides.L` / `sides.R` | the same keys per limb on a unilateral set |
+
+A rest-pause row's `reps` **already includes its bursts** (`10+4+2` is one set of 16), so bursts
+are a breakdown, not extra sets. Exercises also carry `set_summary` (counts by type) and
+`prescribed` (the routine's intensifier and warm-up count), and `get_exercise_history` reports
+`drop_sets` / `rest_pause_sets` / `burst_reps` per session.
+
 ## Security model
 
 - The MCP token lives in `secrets/mcp-token`; the Caddy/openGym token is derived from

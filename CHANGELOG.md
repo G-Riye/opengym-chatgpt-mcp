@@ -5,6 +5,24 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-28
+
+### Added
+- **What was actually done, set by set.** Every completed set now carries `type`
+  (`straight` / `dropset` / `restpause` / `warmup`), `drops` (递减组: weight + reps per drop),
+  `bursts` + `burst_reps` (爆发组 = rest-pause bursts: reps + rest_sec per burst) and `max`
+  (AMRAP). Per-side rows expose the same fields under `sides.L` / `sides.R`.
+- Exercises in a workout now carry `set_summary` (counts of straight/dropset/restpause/warmup
+  plus total `burst_reps`) and `prescribed` (the routine's intensifier / warm-up count), so a
+  model can tell "planned rest-pause" from "actually did rest-pause".
+- `get_exercise_history` sessions report `drop_sets`, `rest_pause_sets` and `burst_reps`.
+- Tool descriptions in `get_training_context`, `get_results`, `get_updates` and
+  `get_exercise_history` document these fields, and the server instructions explain that a
+  rest-pause row's `reps` already includes its bursts (do not count them as extra sets).
+- `scripts/fields-test.mjs` grew to **72 checks**, including a synthetic workout with a
+  warm-up row, a drop-set, a rest-pause row with three bursts, an AMRAP set and a per-side
+  rest-pause set.
+
 ## [1.2.1] - 2026-10-28
 
 ### Fixed

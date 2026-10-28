@@ -197,6 +197,48 @@ export function workoutVolume(w) {
   return Math.round(volume * 10) / 10;
 }
 
+/* ---------- per-set detail (drops = 递减组, bursts = 爆发组 / rest-pause) ---------- */
+
+const isWarmupFlag = s => s?.warmup === true || /^warm-?up$/i.test(String(s?.phase || ''));
+
+/* The app stores an intensifier two ways: the row's `type` and, for rest-pause, the
+   `clusters` that break the set's own total into short-rest bursts (lib/workout-model.js). */
+function setKind(s) {
+  if (isWarmupFlag(s)) return 'warmup';
+  const type = String(s?.type || '').toLowerCase();
+  if (type === 'dropset' || (Array.isArray(s?.drops) && s.drops.length)) return 'dropset';
+  if (type === 'restpause' || (Array.isArray(s?.clusters) && s.clusters.length)) return 'restpause';
+  return 'straight';
+}
+const dropsView = s => (Array.isArray(s?.drops) ? s.drops : [])
+  .map(d => ({ weight: d?.w ?? null, reps: d?.r ?? null }))
+  .filter(d => d.weight != null || d.reps != null);
+const burstsView = s => (Array.isArray(s?.clusters) ? s.clusters : [])
+  .map(c => ({ reps: c?.r ?? null, rest_sec: c?.restSec ?? null }))
+  .filter(c => c.reps != null);
+
+/* All the per-set extras, shared by the flat row and its per-side halves. */
+function setExtras(s) {
+  const kind = setKind(s);
+  const drops = dropsView(s);
+  const bursts = burstsView(s);
+  const out = {
+    ...(kind !== 'straight' ? { type: kind } : {}),
+    ...(s?.max === true ? { max: true } : {}),
+    ...(drops.length ? { drops } : {}),
+    ...(bursts.length ? { bursts, burst_reps: bursts.reduce((n, b) => n + (Number(b.reps) || 0), 0) } : {}),
+  };
+  return out;
+}
+function sideView(side) {
+  return {
+    weight: side?.w ?? null,
+    reps: side?.r ?? null,
+    done: !!side?.done,
+    ...setExtras(side),
+  };
+}
+
 export function workoutView(S, w, { detail = true } = {}) {
   const entries = Array.isArray(w?.entries) ? w.entries : [];
   let setsDone = 0;
@@ -214,11 +256,9 @@ export function workoutView(S, w, { detail = true } = {}) {
       done: !!s?.done,
       rir: Number.isFinite(s?.rir) ? s.rir : null,
       rpe: Number.isFinite(s?.rpe) ? s.rpe : null,
+      ...setExtras(s),
       ...(typeof s?.note === 'string' && s.note ? { note: s.note.slice(0, 300) } : {}),
-      ...(s?.sides ? { sides: {
-        L: { weight: s.sides.L?.w ?? null, reps: s.sides.L?.r ?? null, done: !!s.sides.L?.done },
-        R: { weight: s.sides.R?.w ?? null, reps: s.sides.R?.r ?? null, done: !!s.sides.R?.done },
-      } } : {}),
+      ...(s?.sides ? { sides: { L: sideView(s.sides.L), R: sideView(s.sides.R) } } : {}),
     }));
     setsDone += sets.reduce((n, s) => n + (s.done ? (s.sides ? 2 : 1) : 0), 0);
     const planned = target.sets ?? e.planned?.sets ?? sets.length;
@@ -239,6 +279,20 @@ export function workoutView(S, w, { detail = true } = {}) {
       },
       sets: detail ? sets : sets.filter(s => s.done),
       top_weight: e.topW ?? null,
+      set_summary: (() => {
+        const counts = { straight: 0, dropset: 0, restpause: 0, warmup: 0 };
+        let burstReps = 0;
+        for (const set of sets) {
+          counts[set.type || 'straight'] = (counts[set.type || 'straight'] || 0) + 1;
+          burstReps += set.burst_reps || 0;
+        }
+        return counts.restpause || counts.dropset || counts.warmup
+          ? { ...counts, ...(burstReps ? { burst_reps: burstReps } : {}) }
+          : null;
+      })(),
+      prescribed: target.intensifier || target.warmupSets
+        ? { ...(target.intensifier ? { intensifier: target.intensifier } : {}), ...(target.warmupSets ? { warmup_sets: target.warmupSets } : {}) }
+        : null,
       ...(() => {
         const note = typeof e.note === 'string' && e.note ? e.note
           : (typeof target.note === 'string' && target.note ? target.note : '');
@@ -302,10 +356,19 @@ export function exerciseHistory(S, exerciseId, limit = 8) {
     let bestEst = null;
     let totalReps = 0;
     let doneSets = 0;
+    let dropSets = 0;
+    let restPauseSets = 0;
+    let burstReps = 0;
     for (const e of entries) {
       for (const s of Array.isArray(e.sets) ? e.sets : []) {
         if (!s?.done) continue;
         doneSets += 1;
+        const kind = setKind(s);
+        if (kind === 'dropset') dropSets += 1;
+        if (kind === 'restpause') {
+          restPauseSets += 1;
+          burstReps += burstsView(s).reduce((n, b) => n + (Number(b.reps) || 0), 0);
+        }
         const reps = Number(s.r) || 0;
         totalReps += reps;
         const weight = Number(s.w) || 0;
@@ -322,6 +385,8 @@ export function exerciseHistory(S, exerciseId, limit = 8) {
       date: w.d, workout_id: w.id, routine: w.name || null,
       sets_done: doneSets, top_weight: top?.weight ?? null, top_reps: top?.reps ?? null,
       total_reps: totalReps, est_1rm: bestEst,
+      ...(dropSets || restPauseSets ? { drop_sets: dropSets, rest_pause_sets: restPauseSets } : {}),
+      ...(burstReps ? { burst_reps: burstReps } : {}),
       ...(note ? { note: String(note).slice(0, 400) } : {}),
     });
   }

@@ -236,7 +236,7 @@ export const TOOLS = [
   {
     name: 'get_training_context',
     title: 'Full training context',
-    description: 'Read-only. The main context call: profile, bodyweight trend, every routine with sets/reps/weight/rest/notes, the weekly schedule and next 7 days, the last 5 completed workouts with per-set actuals, and how many new completions are waiting. Use this before designing any plan. It does not acknowledge updates.',
+    description: 'Read-only. The main context call: profile, bodyweight trend, every routine with sets/reps/weight/rest/notes, the weekly schedule and next 7 days, the last 5 completed workouts with per-set actuals, how many new completions are waiting, and a body-measurement summary. Per-set rows expose what was actually done: `type` (straight / dropset / restpause / warmup), `drops` (递减组: weight + reps per drop), `bursts` (爆发组, rest-pause bursts: reps + rest_sec, with `burst_reps`), `max` for an AMRAP set and per-side equivalents; the exercise carries `set_summary` counts and the `prescribed` intensifier. Use this before designing any plan. It does not acknowledge updates.',
     inputSchema: obj(),
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     handler: () => {
@@ -271,7 +271,7 @@ export const TOOLS = [
   {
     name: 'get_exercise_history',
     title: 'Exercise history and 1RM',
-    description: 'Read-only. Per-exercise history: last sessions, top weight/reps, total reps and estimated 1RM (Epley, completed sets of 1–12 reps). Use it before prescribing a weight or judging progress.',
+    description: 'Read-only. Per-exercise history: last sessions, top weight/reps, total reps and estimated 1RM (Epley, completed sets of 1–12 reps). Each session also reports `drop_sets`, `rest_pause_sets` and `burst_reps` (爆发组) when the exercise was trained with those intensifiers. Use it before prescribing a weight or judging progress.',
     inputSchema: obj({
       exercise_id: { type: 'string', description: 'Exact exercise ID, preferably from search_exercises.' },
       limit: { type: 'integer', minimum: 1, maximum: 30 },
@@ -282,7 +282,7 @@ export const TOOLS = [
   {
     name: 'get_results',
     title: 'Completed workouts in a date range',
-    description: 'Read-only. Completed sessions between two dates (default: last 14 days), newest first, with per-set actual weight/reps/RIR/sides, completion vs target, volume and PRs. Use this to review a block or answer “上周练得怎么样”.',
+    description: 'Read-only. Completed sessions between two dates (default: last 14 days), newest first, with per-set actual weight/reps/RIR/sides, set types (`type`, `drops` for 递减组, `bursts` for 爆发组/rest-pause with reps + rest_sec, `max` for AMRAP), completion vs target, volume and PRs. Use this to review a block or answer “上周练得怎么样”.',
     inputSchema: obj({
       since: { type: 'string', description: 'YYYY-MM-DD inclusive. Defaults to 14 days ago.' },
       until: { type: 'string', description: 'YYYY-MM-DD inclusive. Defaults to today.' },
@@ -321,7 +321,7 @@ export const TOOLS = [
   {
     name: 'get_updates',
     title: 'New completions since last sync',
-    description: 'Read-only, but advances a local cursor when ack=true (default). At the START of every conversation, and whenever the user asks “我练完了/Gym 里完成了/有什么更新”, call this. It returns only workouts completed since the previous call, with full sets, so you can update the conversation. The first call establishes a baseline and returns the latest session instead of dumping all history.',
+    description: 'Read-only, but advances a local cursor when ack=true (default). At the START of every conversation, and whenever the user asks “我练完了/Gym 里完成了/有什么更新”, call this. It returns only workouts completed since the previous call, with full sets (including 递减组 `drops` and 爆发组 `bursts`: reps + rest_sec), so you can update the conversation. The first call establishes a baseline and returns the latest session instead of dumping all history.',
     inputSchema: obj({
       ack: { type: 'boolean', description: 'Default true. Set false to peek without advancing the cursor.' },
       limit: { type: 'integer', minimum: 1, maximum: 20 },
