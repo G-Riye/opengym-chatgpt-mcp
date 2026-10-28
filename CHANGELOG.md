@@ -5,6 +5,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-10-28
+
+### Fixed
+- `scripts/release.ps1` read `src/server.mjs` with `Get-Content -Raw`, which decodes as ANSI on
+  Windows PowerShell 5.1 and turned the Chinese MCP instructions into mojibake — the template
+  literal no longer closed, so the connector could not start after a release. Both files are now
+  read and written as explicit UTF-8, and the bump is verified before committing.
+- Restored `src/server.mjs` from the pre-release commit; the v1.2.0 tag was replaced by v1.2.1.
+  The feature set is identical to 1.2.0.
+
 ## [1.2.0] - 2026-10-28
 
 ### Added

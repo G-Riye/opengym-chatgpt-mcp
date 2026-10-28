@@ -20,12 +20,17 @@ function Set-Text($file, $text) { [IO.File]::WriteAllText($file, $text, $utf8) }
 Write-Host "== release $Version =="
 
 # 1. bump package.json and the MCP server version string
+# NOTE: always read/write UTF-8 explicitly. Get-Content -Raw decodes as ANSI on
+# Windows PowerShell 5.1 and turned the Chinese INSTRUCTIONS into mojibake (1.2.0).
 $pkgFile = Join-Path $chatgpt 'package.json'
-$pkg = Get-Content $pkgFile -Raw
+$pkg = [IO.File]::ReadAllText($pkgFile, [Text.Encoding]::UTF8)
 Set-Text $pkgFile ($pkg -replace '"version":\s*"[^"]+"', ('"version": "' + $Version + '"'))
 $serverFile = Join-Path $chatgpt 'src\server.mjs'
-$server = Get-Content $serverFile -Raw
+$server = [IO.File]::ReadAllText($serverFile, [Text.Encoding]::UTF8)
 Set-Text $serverFile ($server -replace "const VERSION = '[^']+';", ("const VERSION = '" + $Version + "';"))
+if ($serverFile -and -not ([IO.File]::ReadAllText($serverFile, [Text.Encoding]::UTF8) -match "const VERSION = '$([regex]::Escape($Version))';")) {
+  throw 'version bump did not apply'
+}
 Write-Host '  version bumped in package.json + src/server.mjs'
 
 # 2. tests (read-only; the connector must be running for the smoke suite)
