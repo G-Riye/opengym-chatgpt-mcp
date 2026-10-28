@@ -1,0 +1,10 @@
+{
+  "port": 8787,
+  "baseUrl": "http://127.0.0.1:30347",
+  "dataDir": null,
+  "publicUrl": null,
+  "writes": true,
+  "timezone": "Asia/Shanghai",
+  "tokenTtlDays": 3650,
+  "backupKeep": 30
+}

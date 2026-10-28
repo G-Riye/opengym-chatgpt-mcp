@@ -1,0 +1,20 @@
+# Secrets and runtime state - never commit these
+secrets/
+store/
+logs/
+
+# Portable tooling downloaded at runtime (git / gh / cloudflared)
+tools/
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Local config overrides
+config.json
+*.local.json
+
+# OS noise
+Thumbs.db
+.DS_Store
+desktop.ini
