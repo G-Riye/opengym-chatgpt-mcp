@@ -5,7 +5,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { applyActions } from '../src/plan.mjs';
-import { planView } from '../src/state.mjs';
+import { planView, measurementsView } from '../src/state.mjs';
 
 const SELF = path.resolve(import.meta.dirname, '..');
 const ROOT = path.resolve(SELF, '..');
@@ -100,5 +100,60 @@ rejects('rejects pyramid_weight without pyramid', [{ type: 'create_routine', nam
 rejects('rejects bad deload factor', [{ type: 'create_routine', name: 'X', exercises: [{ exercise_id: '0025', deload_factor: 0.7 }] }]);
 rejects('rejects unknown intensifier field', [{ type: 'create_routine', name: 'X', exercises: [{ exercise_id: '0025', intensifier: { type: 'dropset', reps: 5 } }] }]);
 rejects('rejects pyramid on a time exercise', [{ type: 'create_routine', name: 'X', exercises: [{ exercise_id: 'plank', mode: 'time', seconds: 30, pyramid: [10, 10] }] }]);
+
+/* ---------- 1.2.0: cardio in plans ---------- */
+
+const CARDIO_ID = '3666'; // walking on incline treadmill
+const { state: s2, changes: c2 } = applyActions(S, [{
+  type: 'create_routine',
+  name: 'CARDIO TEST 请勿写入',
+  exercises: [
+    { exercise_id: CARDIO_ID, minutes: 30, speed: 5.5, incline: 12, note: '先走 5 分钟再上坡度' },
+    { exercise_id: '0025', sets: 3, reps: 5, weight: 60, rest_sec: 180 },
+  ],
+}]);
+const cardio = s2.routines.find(r => r.name === 'CARDIO TEST 请勿写入')?.ex?.[0] || {};
+check('cardio mode stored', cardio.mode === 'cardio', `mode=${cardio.mode}`);
+check('cardio minutes', cardio.min === 30, `min=${cardio.min}`);
+check('cardio speed', cardio.speed === 5.5, `speed=${cardio.speed}`);
+check('cardio incline', cardio.incline === 12, `incline=${cardio.incline}`);
+check('cardio defaults to 1 set', cardio.sets === 1, `sets=${cardio.sets}`);
+check('cardio note kept', String(cardio.note || '').includes('坡度'), cardio.note);
+check('cardio label', c2.join(' ').includes('分钟'), c2.join(' | '));
+check('cardio read model', planView(s2).routines.find(r => r.name === 'CARDIO TEST 请勿写入').exercises[0].minutes === 30);
+
+rejects('rejects cardio without mode', [{ type: 'create_routine', name: 'X', exercises: [{ exercise_id: CARDIO_ID, sets: 2 }] }]);
+rejects('rejects cardio mode on a lift', [{ type: 'create_routine', name: 'X', exercises: [{ exercise_id: '0025', mode: 'cardio', minutes: 20 }] }]);
+rejects('rejects incline on a bike', [{ type: 'create_routine', name: 'X', exercises: [{ exercise_id: '2138', mode: 'cardio', minutes: 20, incline: 8 }] }]);
+
+/* ---------- 1.2.0: body measurements ---------- */
+
+const { state: s3, changes: c3 } = applyActions(S, [
+  { type: 'log_measurement', date: '2026-10-28', values: { waist: 82.4, chest: 101, bodyFat: 18.6, custom: { 左小腿: 36.2 } } },
+  { type: 'set_measurement_fields', enable: ['abdomen'], custom: [{ name: '颈围-放松' }] },
+]);
+const m = (s3.measurements || []).find(e => e.d === '2026-10-28') || {};
+check('measurement entry created', m.d === '2026-10-28');
+check('measurement waist stored', m.waist === 82.4, `waist=${m.waist}`);
+check('measurement bodyFat stored', m.bodyFat === 18.6, `bodyFat=${m.bodyFat}`);
+check('measurement custom value', (m.other || []).some(o => o.name === '左小腿' && o.value === 36.2), JSON.stringify(m.other));
+check('custom field registered', (s3.customMeasurements || []).some(c => c.name === '左小腿'));
+check('measurement enable field', (s3.measurementEnabled || []).includes('abdomen'));
+check('measurement custom via action', (s3.customMeasurements || []).some(c => c.name === '颈围-放松'));
+check('measurement changes readable', c3.join(' ').includes('记录体测'), c3.join(' | '));
+
+const mv = measurementsView(s3, { limit: 5 });
+check('measurementsView latest', mv.latest?.date === '2026-10-28', JSON.stringify(mv.latest?.values));
+check('measurementsView series', Array.isArray(mv.series?.waist) && mv.series.waist.length > 0);
+check('measurementsView cm unit', mv.unit === 'cm' && mv.display_unit === (S.unit === 'lb' ? 'in' : 'cm'));
+
+rejects('rejects unknown measurement field', [{ type: 'log_measurement', values: { weight: 70 } }]);
+rejects('rejects bad measurement value', [{ type: 'log_measurement', values: { waist: -3 } }]);
+
+/* ---------- notes must survive the read model ---------- */
+const withNotes = planView(S).routines.flatMap(r => r.exercises).filter(x => x.note);
+check('planView returns exercise notes', withNotes.length > 0, `${withNotes.length} notes`);
+const workoutWithNote = (S.workouts || []).flatMap(w => w.entries || []).filter(e => (e.note || e.target?.note));
+check('workout entries carry notes', workoutWithNote.length > 0, `${workoutWithNote.length} entries`);
 
 console.log(`\nrevision in memory: ${S._rev} (unchanged - nothing was written)`);

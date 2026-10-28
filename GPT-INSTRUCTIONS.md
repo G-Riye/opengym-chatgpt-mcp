@@ -34,6 +34,14 @@
 - 进阶：inc（加重步长）、deload_factor（0.8/0.85/0.9）、backoff（退让组）、last_to_failure（末组力竭）、reps_max、sets_max、progression（单动作覆盖模板规则）。
 - 强度技巧：intensifier = { type:"dropset", count, pct } 或 { type:"restpause", total_reps, rest_sec }。
 - 读回来：get_plan / get_training_context 会返回同样的字段名，改计划前先看清楚现有 prescription，不要把它简化成「3×8」。
+- 有氧：mode="cardio" + minutes + speed（跑步机/走跑/椭圆可加 incline 坡度%）。非有氧动作不能设 cardio。
+- 备注：每个动作的 note 是 App 里的备注/口令，读计划、读训练记录、读动作历史都会返回；不要丢，除非我要求。
+
+【体测】
+- 先 get_measurements 看现有围度/体脂和趋势。
+- 写入同样走两步：plan_preview 用 log_measurement（values 用厘米，bodyFat 用 %，自定义项用 custom:{"左小腿":36}）
+  或 set_measurement_fields（开关字段/新增自定义项）→ 我确认 → plan_apply。
+- 只在我给出数字时记录，不要估算或补全缺失项。
 
 【更新与复盘】
 - get_updates 之后，先复述实际完成的组数/重量/完成率，再给 1–3 条具体建议（加重量、减组、换动作、休息）。

@@ -6,7 +6,7 @@ import { userInfo, me } from './opengym.mjs';
 import {
   requireState, readState, planView, upcoming, recent, workoutsBetween,
   exerciseHistory, bodyweightView, getUpdates, pendingUpdates, contextView,
-  resetUpdates, todayIso,
+  resetUpdates, todayIso, measurementsView,
 } from './state.mjs';
 import { search, exerciseCount } from './exercises.mjs';
 import { createProposal, commitProposal, proposalCount } from './plan.mjs';
@@ -14,6 +14,21 @@ import { createProposal, commitProposal, proposalCount } from './plan.mjs';
 const obj = (properties = {}, required = []) => ({
   type: 'object', properties, required, additionalProperties: false,
 });
+
+const CARDIO_PROPS = {
+  minutes: {
+    type: 'integer', minimum: 1, maximum: 600,
+    description: 'Cardio only: minutes per set. Giving it switches the exercise to mode="cardio".',
+  },
+  speed: {
+    type: 'number', minimum: 0, maximum: 100,
+    description: 'Cardio only: speed in the profile speed unit (km/h or mph).',
+  },
+  incline: {
+    type: 'number', minimum: 0, maximum: 40,
+    description: 'Cardio only: treadmill grade in percent (half-percent steps); only on walking/running/elliptical style cardio.',
+  },
+};
 
 /* Fields that only exist because openGym's editor stores them on the routine exercise:
    warm-up ramp, per-set (pyramid) targets, drop-sets / rest-pause, back-off, deload. */
@@ -98,7 +113,7 @@ const EXERCISE_INPUT = {
   properties: {
     exercise_id: { type: 'string', description: 'Exact exercise ID from search_exercises.' },
     sets: { type: 'integer', minimum: 1, maximum: 20 },
-    mode: { type: 'string', enum: ['reps', 'time'] },
+    mode: { type: 'string', enum: ['reps', 'time', 'cardio'] },
     reps: { type: 'integer', minimum: 1, maximum: 100 },
     reps_min: { type: 'integer', minimum: 1, maximum: 100, description: 'Optional low end of a rep range.' },
     seconds: { type: 'integer', minimum: 1, maximum: 3600, description: 'Per-set seconds for mode=time.' },
@@ -109,6 +124,7 @@ const EXERCISE_INPUT = {
     bodyweight: { type: 'boolean' },
     assisted: { type: 'boolean' },
     db_load: { type: 'string', enum: ['each', 'total'] },
+    ...CARDIO_PROPS,
     ...ADVANCED_PROPS,
   },
   required: ['exercise_id'],
@@ -119,7 +135,7 @@ const PATCH = {
   type: 'object',
   properties: {
     sets: { type: 'integer', minimum: 1, maximum: 20 },
-    mode: { type: 'string', enum: ['reps', 'time'] },
+    mode: { type: 'string', enum: ['reps', 'time', 'cardio'] },
     reps: { type: 'integer', minimum: 1, maximum: 100 },
     reps_min: { type: 'integer', minimum: 1, maximum: 100 },
     seconds: { type: 'integer', minimum: 1, maximum: 3600 },
@@ -130,6 +146,7 @@ const PATCH = {
     bodyweight: { type: 'boolean' },
     assisted: { type: 'boolean' },
     db_load: { type: 'string', enum: ['each', 'total'] },
+    ...CARDIO_PROPS,
     ...ADVANCED_PROPS,
   },
   additionalProperties: false,
@@ -142,7 +159,8 @@ const ACTION = {
       type: 'string',
       enum: ['create_routine', 'update_routine', 'delete_routine', 'set_exercise', 'add_exercise',
         'remove_exercise', 'move_exercise', 'replace_exercise', 'set_superset', 'clear_superset',
-        'assign_weekday', 'override_date', 'set_progression', 'add_bodyweight'],
+        'assign_weekday', 'override_date', 'set_progression', 'add_bodyweight',
+        'log_measurement', 'set_measurement_fields'],
     },
     routine_id: { type: 'string', description: 'Existing routine id; omit for create_routine (server generates one).' },
     name: { type: 'string', description: 'Routine name, or superset name.' },
@@ -156,8 +174,32 @@ const ACTION = {
     indexes: { type: 'array', items: { type: 'integer', minimum: 0 } },
     patch: PATCH,
     weekday: { type: 'integer', minimum: 0, maximum: 6 },
-    date: { type: 'string', description: 'YYYY-MM-DD.' },
+    date: { type: 'string', description: 'YYYY-MM-DD. For log_measurement: the day being measured (defaults to today).' },
     weight: { type: 'number', minimum: 1, maximum: 1000 },
+    values: {
+      type: 'object', additionalProperties: true,
+      description: 'For log_measurement: centimetres per field (bodyFat in %), e.g. {"waist":82,"chest":101.5,"bodyFat":18.4}. Use {"custom":{"左小腿":36}} or {"other":[{"name":"左小腿","value":36}]} for custom fields.',
+    },
+    enable: {
+      type: 'array', items: { type: 'string' },
+      description: 'For set_measurement_fields: built-in keys to switch on (neck, shoulders, chest, waist, hips, abdomen, upperArmLeft, upperArmRight, forearmLeft, forearmRight, wristLeft, wristRight, thighLeft, thighRight, calfLeft, calfRight, ankleLeft, ankleRight, bodyFat).',
+    },
+    disable: {
+      type: 'array', items: { type: 'string' },
+      description: 'For set_measurement_fields: built-in keys to switch off.',
+    },
+    custom: {
+      type: 'array',
+      items: {
+        type: 'object', additionalProperties: false, required: ['name'],
+        properties: { name: { type: 'string' }, id: { type: 'string' }, enabled: { type: 'boolean' } },
+      },
+      description: 'For set_measurement_fields: add or rename custom measurement fields (values are entered later through log_measurement).',
+    },
+    disable_custom: {
+      type: 'array', items: { type: 'string' },
+      description: 'For set_measurement_fields: ids or names of custom fields to switch off.',
+    },
   },
   required: ['type'],
   additionalProperties: false,
@@ -263,6 +305,20 @@ export const TOOLS = [
     },
   },
   {
+    name: 'get_measurements',
+    title: 'Body measurements',
+    description: 'Read-only. Body measurements (neck, shoulders, chest, waist, hips, arms, thighs, calves, body fat and any custom fields) in centimetres / percent, with the latest entry, per-field series and recent entries. Use it before advising on body composition or when the user asks “最近围度怎么样”.',
+    inputSchema: obj({
+      limit: { type: 'integer', minimum: 1, maximum: 100, description: 'How many recent entries to return (default 24).' },
+      series_days: { type: 'integer', minimum: 7, maximum: 3650, description: 'Series window in days (default 365).' },
+    }),
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    handler: ({ limit, series_days }) => {
+      const S = requireState();
+      return measurementsView(S, { limit: limit ?? 24, seriesDays: series_days ?? 365 });
+    },
+  },
+  {
     name: 'get_updates',
     title: 'New completions since last sync',
     description: 'Read-only, but advances a local cursor when ack=true (default). At the START of every conversation, and whenever the user asks “我练完了/Gym 里完成了/有什么更新”, call this. It returns only workouts completed since the previous call, with full sets, so you can update the conversation. The first call establishes a baseline and returns the latest session instead of dumping all history.',
@@ -276,7 +332,7 @@ export const TOOLS = [
   {
     name: 'plan_preview',
     title: 'Preview a plan change',
-    description: 'Dry-run only. Validates a list of plan edits and returns an exact human-readable change list plus a short-lived proposal_id. Nothing is written. Supported actions: create_routine (1–12 exercises), update_routine, delete_routine, set_exercise, add/remove/move/replace_exercise, set_superset, clear_superset, assign_weekday, override_date, set_progression, add_bodyweight. Full openGym exercise model, not just a set count: mode=time, reps_min/reps_max, seconds, weight, rest_sec, side, bodyweight, assisted, db_load, supersets, plus warmup_sets (warm-up ramp, max 5), warmup_rest_sec, inc, deload_factor, backoff, last_to_failure, sets_max, per-exercise progression, intensifier (dropset/restpause) and pyramid/pyramid_weight/pyramid_rest for a different rep or weight on every set. Exercise IDs must come from search_exercises. After this, show the changes and ask the user; only then call plan_apply.',
+    description: 'Dry-run only. Validates a list of edits and returns an exact human-readable change list plus a short-lived proposal_id. Nothing is written. Supported actions: create_routine (1–12 exercises), update_routine, delete_routine, set_exercise, add/remove/move/replace_exercise, set_superset, clear_superset, assign_weekday, override_date, set_progression, add_bodyweight, log_measurement, set_measurement_fields. Full openGym exercise model, not just a set count: mode=reps/time/cardio (cardio needs minutes + speed, optional incline), reps_min/reps_max, seconds, weight, rest_sec, side, bodyweight, assisted, db_load, supersets, plus warmup_sets (warm-up ramp, max 5), warmup_rest_sec, inc, deload_factor, backoff, last_to_failure, sets_max, per-exercise progression, intensifier (dropset/restpause) and pyramid/pyramid_weight/pyramid_rest for a different rep or weight on every set. Body measurements go through the same preview → confirm → apply flow with log_measurement / set_measurement_fields. Exercise IDs must come from search_exercises. After this, show the changes and ask the user; only then call plan_apply.',
     inputSchema: obj({ actions: { type: 'array', minItems: 1, maxItems: 30, items: ACTION } }, ['actions']),
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     handler: ({ actions }) => {

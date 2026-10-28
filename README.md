@@ -64,6 +64,7 @@ Full Chinese guide: [`README-zh-CN.md`](README-zh-CN.md).
 | `search_exercises` | read | 5,600+ exercise library, Chinese + English |
 | `get_exercise_history` | read | per-exercise session history, best set, est. 1RM |
 | `get_results` | read | completed sessions in a date range |
+| `get_measurements` | read | body measurements: 19 built-in fields + custom, series and latest |
 | `get_updates` | read | only workouts completed since the last sync (cursor) |
 | `plan_preview` | dry-run | validate edits, return a change list + `proposal_id` |
 | `plan_apply` | **write** | commit a previewed change (needs `确认写入`) |
@@ -89,9 +90,17 @@ Every field openGym's own editor stores on a routine exercise is reachable throu
 | `progression` | per-exercise override of the routine rule |
 | `side`, `bodyweight`, `assisted`, `db_load` | unilateral, bodyweight, assisted, dumbbell load semantics |
 | `note`, supersets (`sg`, `sgName`, `sgRest`) | coaching cue and superset grouping |
+| `mode:"cardio"` + `minutes` + `speed` + `incline` | cardio entries in a routine (treadmill grade only where it exists) |
+| `log_measurement` / `set_measurement_fields` (actions) | body measurements in the same preview → apply flow |
 
 `pyramid` is the only representation of per-set work: giving it sets `sets` to the list
 length and replaces `reps`, so a shared "12 · 10 · 8 · Max · 12" round-trips exactly.
+
+**Notes vs warm-ups.** Every exercise's `note` (the coaching text you write in openGym) is
+returned by `get_plan`, `get_training_context`, `get_results` and `get_exercise_history`.
+Warm-ups are a *count* (`warmup_sets`), not a list of weights: the app builds the ramp when
+the session starts (50 % / 75 % / 87.5 % of the working weight, never below the bar), so
+"warm-up set 1 = 5 kg" is a session row, not a plan field.
 
 ## Security model
 

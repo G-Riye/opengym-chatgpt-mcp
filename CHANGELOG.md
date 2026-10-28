@@ -5,6 +5,29 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-28
+
+### Added
+- **Cardio in plans.** `mode:"cardio"` with `minutes`, `speed` and `incline` (percent, half-step,
+  only on treadmill/walking/running/elliptical style cardio — the same name rules as
+  `lib/incline.js`). Cardio exercises now round-trip through `get_plan` and the change list
+  reads `1×30分钟 @ 5.5 · 坡度12%`. Non-cardio exercises still refuse `mode:"cardio"`.
+- **Body measurements.** New read tool `get_measurements` (19 built-in fields + custom fields,
+  series, latest, recent entries, cm/percent canonical units) and two write actions inside the
+  normal preview → confirm → apply flow: `log_measurement` (values in cm, bodyFat in %,
+  `custom`/`other` for custom fields) and `set_measurement_fields` (enable/disable built-ins,
+  add or rename custom fields). `get_training_context` now carries a measurements summary.
+- **Notes everywhere.** Workout entries now expose their own note (previously only the planned
+  target note), cardio sets expose `minutes/speed/incline`, and `get_exercise_history` returns
+  the session note. `get_plan` / `get_training_context` already returned per-exercise notes.
+- `scripts/fields-test.mjs` grew to **57 checks** (cardio, measurements, notes, plus the
+  existing warm-up / pyramid / intensifier cases and their rejection paths).
+
+### Changed
+- `plan_preview` description, server instructions and `GPT-INSTRUCTIONS.md` document cardio,
+  measurements, and the warm-up / pyramid semantics.
+- `scripts/mcp-smoke.mjs` expects 12 tools.
+
 ## [1.1.0] - 2026-10-28
 
 ### Added

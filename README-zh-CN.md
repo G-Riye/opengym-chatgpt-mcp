@@ -43,7 +43,7 @@
 
 ---
 
-## 2. 已实现的工具（11 个）
+## 2. 已实现的工具（12 个）
 
 | 工具 | 作用 |
 |---|---|
@@ -53,6 +53,7 @@
 | `search_exercises` | 中文/英文搜 5,632 个内置动作 + 自定义动作；返回 `exercise_id`、部位、器械、是否自重/助力 |
 | `get_exercise_history` | 单个动作的最近训练、最好重量/次数、Epley 估算 1RM |
 | `get_results` | 日期区间内的已完成训练，逐组实际重量/次数/RIR/左右侧、完成率、容量、PR |
+| `get_measurements` | 体测：19 个内置围度/体脂 + 自定义项，最新一次、逐项曲线、历史记录 |
 | `get_updates` | **只返回上次之后新完成的训练**，并推进游标；对话开始时调用即可「更新到当前对话」 |
 | `plan_preview` | 只预览不写入：校验修改、返回中文变更清单 + 15 分钟有效的 `proposal_id` |
 | `plan_apply` | 用户确认后写入：必须 `confirmation:"确认写入"`，校验 rev、自动备份、冲突拒绝 |
@@ -76,16 +77,34 @@ openGym 编辑器里能存的字段，MCP 现在都能写、也能读回来：
 | `progression` | 单个动作覆盖模板的进阶规则（off/linear/greyskull/double/triple/time） |
 | `side` / `bodyweight` / `assisted` / `db_load` | 单侧、自重、助力、哑铃「每只/合计」 |
 | `note` / 超级组（`sg`/`sgName`/`sgRest`） | 备注、超级组分组与组内休息 |
+| `mode:"cardio"` + `minutes` + `speed` + `incline` | **有氧写进计划**：分钟、速度、坡度（坡度只对跑步机/走跑/椭圆等有效） |
 
 **关键**：openGym 里没有「第 1 组 40kg、第 2 组 45kg」这种独立字段，逐组配置就是 `pyramid`
 （每组次数）+ `pyramid_weight`（每组重量）+ `pyramid_rest`（每组休息）。给了 `pyramid`，
 `sets` 自动等于数组长度、`reps` 自动取第一个数值目标，所以「12/10/8/Max/12」能一比一还原。
 
-**热身组的真实语义**：热身不是「正式组里的前几组」，而是每个动作的 `warmupSets` 设置；
-写入后 App 在你开始训练时会自动铺出对应数量的热身行（重量由 App 按递增规则算），
-不计入正式组、不影响容量统计。这也是之前 ChatGPT 说「MCP 写不了热身组」的原因——旧版没暴露这个字段。
+### 2.2 三个容易搞混的点（这版之前确实踩过）
 
-自检：`node scripts/fields-test.mjs`（31 项，纯内存，不写任何数据）、`node scripts/mcp-smoke.mjs`。
+**① 热身组数 vs 热身组重量**
+`warmup_sets` 是**计划字段**（这个动作要铺几组热身，0–5）。**每组热身用多重不是计划字段**：
+openGym 在你开始训练那一刻按正式重量算递增（3 组时 50% / 75% / 87.5%，2 组时 50% / 75%，
+且不低于空杆），生成的是**本次训练的行**，不写回计划。所以截图里「热身 1 = 5kg×8、热身 2 = 7.5kg×4」
+是 App 按 10kg 工作重量算出来的，MCP 能指定「2 组热身」，不能指定「热身第 1 组 5kg」。
+
+**② 备注（note）**
+`get_plan` 和 `get_training_context` **一直返回**每个动作的 `note`（真机实测：25 条）。
+1.2.0 起又补齐了两处：训练记录里每个动作自己的 note（以前只带计划目标上的 note）、
+`get_exercise_history` 每次训练的 note。如果你问 ChatGPT「备注呢」它说没有，多半是：
+- 它调的是 `get_updates`/`get_results` 的旧版本 → 现在也会带；
+- 或者上下文太长被模型自己截断了 → 让它直接读某个模板（`get_plan`）再看那一条。
+
+**③ 有氧 + 体测走同一套写入流程**
+有氧：`mode:"cardio"`、`minutes`、`speed`（+ `incline`），非有氧动作不能设 cardio。
+体测：读用 `get_measurements`；写用 `plan_preview` 里的 `log_measurement`（值用厘米，`bodyFat` 用 %，
+自定义项用 `custom:{"左小腿":36}`）或 `set_measurement_fields`（开关字段/新增自定义项），
+确认后同样 `plan_apply`，rev 冲突照样拒绝、写前照样备份。
+
+自检：`node scripts/fields-test.mjs`（57 项，纯内存，不写任何数据）、`node scripts/mcp-smoke.mjs`。
 
 ---
 

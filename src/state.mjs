@@ -92,6 +92,9 @@ function exerciseLine(S, ex, index) {
     reps_max: ex.repsMax ?? null,
     sets_max: ex.setsMax ?? null,
     seconds: ex.sec ?? null,
+    minutes: ex.min ?? null,
+    speed: ex.speed ?? null,
+    incline: ex.incline ?? null,
     weight: ex.weight ?? null,
     rest_sec: ex.restSec ?? null,
     warmup_sets: ex.warmupSets ?? null,
@@ -205,9 +208,13 @@ export function workoutView(S, w, { detail = true } = {}) {
       weight: s?.w ?? null,
       reps: s?.r ?? null,
       seconds: s?.sec ?? null,
+      minutes: s?.min ?? null,
+      speed: s?.speed ?? null,
+      incline: s?.incline ?? null,
       done: !!s?.done,
       rir: Number.isFinite(s?.rir) ? s.rir : null,
       rpe: Number.isFinite(s?.rpe) ? s.rpe : null,
+      ...(typeof s?.note === 'string' && s.note ? { note: s.note.slice(0, 300) } : {}),
       ...(s?.sides ? { sides: {
         L: { weight: s.sides.L?.w ?? null, reps: s.sides.L?.r ?? null, done: !!s.sides.L?.done },
         R: { weight: s.sides.R?.w ?? null, reps: s.sides.R?.r ?? null, done: !!s.sides.R?.done },
@@ -226,10 +233,17 @@ export function workoutView(S, w, { detail = true } = {}) {
         reps_min: target.repsMin ?? e.planned?.repsMin ?? null,
         weight: target.weight ?? e.planned?.weight ?? null,
         rest_sec: target.restSec ?? null,
+        minutes: target.min ?? null,
+        speed: target.speed ?? null,
+        incline: target.incline ?? null,
       },
       sets: detail ? sets : sets.filter(s => s.done),
       top_weight: e.topW ?? null,
-      ...(detail && typeof target.note === 'string' && target.note ? { note: target.note.slice(0, 400) } : {}),
+      ...(() => {
+        const note = typeof e.note === 'string' && e.note ? e.note
+          : (typeof target.note === 'string' && target.note ? target.note : '');
+        return note ? { note: note.slice(0, 400) } : {};
+      })(),
     };
   });
   const start = Number.isFinite(w?.start) ? w.start : null;
@@ -301,10 +315,14 @@ export function exerciseHistory(S, exerciseId, limit = 8) {
       }
     }
     if (!doneSets) continue;
+    const note = entries
+      .map(e => (typeof e.note === 'string' ? e.note : '') || (typeof e.target?.note === 'string' ? e.target.note : ''))
+      .find(Boolean) || '';
     sessions.push({
       date: w.d, workout_id: w.id, routine: w.name || null,
       sets_done: doneSets, top_weight: top?.weight ?? null, top_reps: top?.reps ?? null,
       total_reps: totalReps, est_1rm: bestEst,
+      ...(note ? { note: String(note).slice(0, 400) } : {}),
     });
   }
   const bestWeight = sessions.reduce((best, s) => s.top_weight != null && (!best || s.top_weight > best.top_weight) ? s : best, null);
@@ -334,7 +352,104 @@ export function bodyweightView(S) {
   };
 }
 
-/* ---------- updates cursor ---------- */
+/* ---------- body measurements ---------- */
+
+/* Mirrors frontend/src/lib/measurements.js. Values are stored in centimetres (bodyFat in %)
+   no matter what the profile's weight unit is; the app converts only at the UI edge. */
+export const MEASUREMENT_FIELDS = [
+  { key: 'neck', label: '颈围', group: '躯干' },
+  { key: 'shoulders', label: '肩围', group: '躯干' },
+  { key: 'chest', label: '胸围', group: '躯干' },
+  { key: 'waist', label: '腰围', group: '躯干' },
+  { key: 'hips', label: '臀围', group: '躯干' },
+  { key: 'abdomen', label: '腹围', group: '躯干', optional: true },
+  { key: 'upperArmLeft', label: '左上臂', group: '手臂' },
+  { key: 'upperArmRight', label: '右上臂', group: '手臂' },
+  { key: 'forearmLeft', label: '左前臂', group: '手臂' },
+  { key: 'forearmRight', label: '右前臂', group: '手臂' },
+  { key: 'wristLeft', label: '左腕', group: '手臂', optional: true },
+  { key: 'wristRight', label: '右腕', group: '手臂', optional: true },
+  { key: 'thighLeft', label: '左大腿', group: '腿' },
+  { key: 'thighRight', label: '右大腿', group: '腿' },
+  { key: 'calfLeft', label: '左小腿', group: '腿' },
+  { key: 'calfRight', label: '右小腿', group: '腿' },
+  { key: 'ankleLeft', label: '左踝', group: '腿', optional: true },
+  { key: 'ankleRight', label: '右踝', group: '腿', optional: true },
+  { key: 'bodyFat', label: '体脂率', group: '其他', kind: 'percent', optional: true },
+];
+export const MEASUREMENT_KEYS = MEASUREMENT_FIELDS.map(f => f.key);
+export const DEFAULT_MEASUREMENT_KEYS = MEASUREMENT_FIELDS.filter(f => !f.optional).map(f => f.key);
+
+const mRound = n => Math.round(n * 10) / 10;
+const mValid = v => (Number.isFinite(+v) && +v > 0 ? mRound(+v) : null);
+
+function measurementEntryView(entry) {
+  const values = {};
+  for (const key of MEASUREMENT_KEYS) {
+    const v = mValid(entry?.[key]);
+    if (v != null) values[key] = v;
+  }
+  const other = (Array.isArray(entry?.other) ? entry.other : [])
+    .map(o => ({ id: o?.id ?? null, name: o?.name ?? null, value: mValid(o?.value) }))
+    .filter(o => o.value != null);
+  return { date: entry?.d ?? null, values, ...(other.length ? { other } : {}) };
+}
+
+export function measurementsView(S, { limit = 24, seriesDays = 365 } = {}) {
+  const all = (Array.isArray(S?.measurements) ? S.measurements : [])
+    .filter(e => e && /^\d{4}-\d{2}-\d{2}$/.test(String(e.d || '')))
+    .sort((a, b) => String(a.d).localeCompare(String(b.d)) || (Number(a.t) || 0) - (Number(b.t) || 0));
+  const custom = (Array.isArray(S?.customMeasurements) ? S.customMeasurements : [])
+    .filter(c => c && c.id && String(c.name || '').trim())
+    .map(c => ({ id: String(c.id), name: String(c.name).trim(), enabled: c.enabled !== false }));
+  const enabled = Array.isArray(S?.measurementEnabled) && S.measurementEnabled.length
+    ? S.measurementEnabled.filter(k => MEASUREMENT_KEYS.includes(k))
+    : DEFAULT_MEASUREMENT_KEYS;
+
+  const cutoff = addDays(todayIso(), -Math.max(1, Math.min(3650, Number(seriesDays) || 365)));
+  const recent = all.filter(e => String(e.d) >= cutoff);
+  const series = {};
+  for (const key of enabled) {
+    const points = recent
+      .map(e => ({ date: e.d, value: mValid(e[key]) }))
+      .filter(p => p.value != null);
+    if (points.length) series[key] = points;
+  }
+  for (const c of custom) {
+    if (!c.enabled) continue;
+    const points = recent
+      .map(e => ({ date: e.d, value: mValid((e.other || []).find(o => String(o.id) === c.id)?.value) }))
+      .filter(p => p.value != null);
+    if (points.length) series[c.id] = points;
+  }
+
+  const shown = all.slice(-Math.max(1, Math.min(100, Number(limit) || 24))).map(measurementEntryView);
+  const latest = shown.length ? shown[shown.length - 1] : null;
+  const unit = S?.unit === 'lb' ? 'in' : 'cm';
+  return {
+    unit: 'cm',
+    display_unit: unit,
+    note: '所有围度以厘米存储（体脂率是百分比）；lb 档案里 App 只做显示换算。字段见 fields。',
+    fields: MEASUREMENT_FIELDS.map(f => ({ key: f.key, label: f.label, group: f.group, unit: f.kind === 'percent' ? '%' : 'cm', enabled: enabled.includes(f.key) })),
+    custom_fields: custom,
+    latest,
+    series,
+    entries: shown,
+    total_entries: all.length,
+  };
+}
+
+export function measurementsSummary(S) {
+  const view = measurementsView(S, { limit: 1, seriesDays: 30 });
+  return {
+    latest: view.latest,
+    enabled_fields: view.fields.filter(f => f.enabled).map(f => f.key),
+    custom_fields: view.custom_fields.filter(c => c.enabled).map(c => c.name),
+    total_entries: view.total_entries,
+  };
+}
+
+
 
 function cursorFile() { return path.join(config.storeDir, 'updates.json'); }
 
@@ -413,6 +528,7 @@ export function contextView(S) {
     upcoming: upcoming(S, 7),
     recent_workouts: recent(S, 5, { detail: true }),
     last_workout: last,
+    measurements: measurementsSummary(S),
     pending_updates: pendingUpdates(S),
     totals: {
       routines: routinesOf(S).length,

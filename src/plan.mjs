@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { config, stateFile } from './config.mjs';
 import { uid, putState } from './opengym.mjs';
-import { readState, invalidate, planView, routineName, routinesOf, todayIso } from './state.mjs';
+import { readState, invalidate, planView, routineName, routinesOf, todayIso, MEASUREMENT_KEYS, DEFAULT_MEASUREMENT_KEYS } from './state.mjs';
 import { canonicalId, lookup, isCardio, describe } from './exercises.mjs';
 
 const POLICIES = new Set(['off', 'linear', 'greyskull', 'double', 'triple', 'time']);
@@ -187,19 +187,38 @@ function routineOf(S, id) {
   return routine;
 }
 
-function exerciseMeta(S, rawId) {
+function exerciseMeta(S, rawId, mode = 'reps') {
   const id = canonicalId(rawId);
   if (!lookup(id) && !(Array.isArray(S.customEx) && S.customEx.some(e => e.id === id))) {
     fail(`动作 ID ${rawId} 不在 openGym 动作库里；请先用 search_exercises 查有效 ID`);
   }
-  if (isCardio(id)) fail(`「${describe(S, id).name}」是有氧动作，请在 openGym 里记录；计划只支持力量/计时动作`);
-  return describe(S, id);
+  const meta = describe(S, id);
+  const cardio = meta.body_part === 'cardio' || isCardio(id);
+  if (cardio && mode !== 'cardio') {
+    fail(`「${meta.name}」是有氧动作：请用 mode="cardio" + minutes（分钟）+ speed（速度）来写`);
+  }
+  if (!cardio && mode === 'cardio') {
+    fail(`「${meta.name}」不是有氧动作，不能设 mode="cardio"`);
+  }
+  return meta;
+}
+
+/* Treadmill-style grade: half a percent, 0–40, and only on cardio that has a hill
+   (lib/incline.js inclineFits). */
+const HILLY = /treadmill|\bwalk|\brun\b|running|\bjog|sprint|stepmill|stair|stepper|elliptical|cross ?trainer|\bhik(e|ing)|incline|trot|march/i;
+const FLAT = /bike|bicycl|cycl|row(ing|er)?\b|rope|skat|swim|\bski\b|erg\b|jack|burpee|punch|shuffle|hop|jump|climber|crawl/i;
+const inclineFitsName = name => !FLAT.test(String(name || '')) && HILLY.test(String(name || ''));
+function cleanIncline(value, meta) {
+  if (!inclineFitsName(meta.name)) fail(`「${meta.name}」没有坡度这一项（只有跑步机/走跑/椭圆等有）`);
+  const n = Math.round(num(value, 0, 40, 'incline') * 2) / 2;
+  return n > 0 ? n : null;
 }
 
 const STORE_KEYS = ['sets', 'mode', 'reps', 'repsMin', 'repsMax', 'setsMax', 'sec', 'weight', 'restSec',
   'note', 'side', 'bodyweight', 'assisted', 'dbLoad', 'prog', 'inc', 'deloadFactor', 'backoff',
   'lastToFailure', 'warmupSets', 'warmupRestSec', 'intensifier', 'pyramid', 'pyramidWeight', 'pyramidRest'];
 const INPUT_KEYS = ['sets', 'mode', 'reps', 'reps_min', 'reps_max', 'sets_max', 'seconds', 'weight',
+  'minutes', 'speed', 'incline',
   'rest_sec', 'note', 'side', 'bodyweight', 'assisted', 'db_load', 'progression', 'inc',
   'deload_factor', 'backoff', 'last_to_failure', 'warmup_sets', 'warmup_rest_sec',
   'intensifier', 'pyramid', 'pyramid_weight', 'pyramid_rest'];
@@ -210,12 +229,20 @@ function buildEntry(S, input) {
     if (key !== 'exercise_id' && !INPUT_KEYS.includes(key)) fail(`exercise 里不认识字段 ${key}`);
   }
   if (!input.exercise_id) fail('exercise 缺少 exercise_id');
-  const meta = exerciseMeta(S, input.exercise_id);
-  const mode = input.mode === 'time' || input.seconds != null ? 'time' : 'reps';
-  const sets = input.sets == null ? 3 : int(input.sets, 1, 20, 'sets');
+  const mode = input.mode === 'time' || input.seconds != null ? 'time'
+    : input.mode === 'cardio' || input.minutes != null ? 'cardio' : 'reps';
+  const meta = exerciseMeta(S, input.exercise_id, mode);
+  const sets = input.sets == null ? (mode === 'cardio' ? 1 : 3) : int(input.sets, 1, 20, 'sets');
   const entry = { id: meta.exercise_id, sets, mode };
   if (mode === 'time') {
     entry.sec = input.seconds == null ? 30 : int(input.seconds, 1, 3600, 'seconds');
+  } else if (mode === 'cardio') {
+    entry.min = input.minutes == null ? 20 : int(input.minutes, 1, 600, 'minutes');
+    entry.speed = input.speed == null ? 8 : num(input.speed, 0, 100, 'speed');
+    if (input.incline != null) {
+      const incline = cleanIncline(input.incline, meta);
+      if (incline) entry.incline = incline;
+    }
   } else {
     entry.reps = input.reps == null ? 8 : int(input.reps, 1, 100, 'reps');
     const min = input.reps_min == null ? entry.reps : int(input.reps_min, 1, 100, 'reps_min');
@@ -225,12 +252,14 @@ function buildEntry(S, input) {
   }
   if (input.rest_sec != null) entry.restSec = int(input.rest_sec, 0, 900, 'rest_sec');
   if (input.note != null) entry.note = text(String(input.note), 800, 'note');
-  if (input.side != null) entry.side = bool(input.side, 'side');
-  if (input.bodyweight != null) entry.bodyweight = bool(input.bodyweight, 'bodyweight');
-  else if (meta.is_bodyweight) entry.bodyweight = true;
-  if (input.assisted != null) entry.assisted = bool(input.assisted, 'assisted');
-  else if (meta.is_assisted) entry.assisted = true;
-  if (input.db_load != null) entry.dbLoad = oneOf(input.db_load, ['each', 'total'], 'db_load');
+  if (mode !== 'cardio') {
+    if (input.side != null) entry.side = bool(input.side, 'side');
+    if (input.bodyweight != null) entry.bodyweight = bool(input.bodyweight, 'bodyweight');
+    else if (meta.is_bodyweight) entry.bodyweight = true;
+    if (input.assisted != null) entry.assisted = bool(input.assisted, 'assisted');
+    else if (meta.is_assisted) entry.assisted = true;
+    if (input.db_load != null) entry.dbLoad = oneOf(input.db_load, ['each', 'total'], 'db_load');
+  }
   applyAdvanced(entry, input);
   ensureRepRange(entry);
   return entry;
@@ -240,30 +269,61 @@ function patchEntry(S, old, patch) {
   if (!isObj(patch)) fail('patch 必须是对象');
   for (const key of Object.keys(patch)) if (!INPUT_KEYS.includes(key)) fail(`patch 里不认识字段 ${key}`);
   const next = { ...old };
+  const meta = describe(S, old.id);
+  const clearCardio = () => { delete next.min; delete next.speed; delete next.incline; };
   if (patch.sets != null) next.sets = int(patch.sets, 1, 20, 'sets');
   if (patch.mode != null) {
-    oneOf(patch.mode, ['reps', 'time'], 'mode');
+    oneOf(patch.mode, ['reps', 'time', 'cardio'], 'mode');
     next.mode = patch.mode;
-    if (patch.mode === 'time') { delete next.reps; delete next.repsMin; delete next.weight; }
-    else { delete next.sec; if (next.reps == null) next.reps = 8; }
+    if (patch.mode === 'time') {
+      delete next.reps; delete next.repsMin; delete next.weight; clearCardio();
+      delete next.pyramid; delete next.pyramidWeight; delete next.pyramidRest;
+    } else if (patch.mode === 'cardio') {
+      delete next.reps; delete next.repsMin; delete next.weight; delete next.sec;
+      delete next.pyramid; delete next.pyramidWeight; delete next.pyramidRest;
+      if (next.min == null) next.min = 20;
+      if (next.speed == null) next.speed = 8;
+    } else {
+      delete next.sec; clearCardio();
+      if (next.reps == null) next.reps = 8;
+    }
   }
   if (patch.seconds != null) {
     next.mode = 'time'; next.sec = int(patch.seconds, 1, 3600, 'seconds');
-    delete next.reps; delete next.repsMin; delete next.weight;
+    delete next.reps; delete next.repsMin; delete next.weight; clearCardio();
+    delete next.pyramid; delete next.pyramidWeight; delete next.pyramidRest;
+  }
+  if (patch.minutes != null) {
+    next.mode = 'cardio';
+    next.min = int(patch.minutes, 1, 600, 'minutes');
+    delete next.reps; delete next.repsMin; delete next.weight; delete next.sec;
+    delete next.pyramid; delete next.pyramidWeight; delete next.pyramidRest;
+    if (next.speed == null) next.speed = 8;
+  }
+  if (patch.speed != null) {
+    next.mode = 'cardio';
+    next.speed = num(patch.speed, 0, 100, 'speed');
+    delete next.reps; delete next.repsMin; delete next.weight; delete next.sec;
+    if (next.min == null) next.min = 20;
+  }
+  if (patch.incline != null) {
+    if (next.mode !== 'cardio') fail('incline 只能用在有氧动作上（mode="cardio"）');
+    const incline = cleanIncline(patch.incline, meta);
+    if (incline) next.incline = incline; else delete next.incline;
   }
   if (patch.reps != null) {
-    if (next.mode === 'time') fail('计时动作不能设置 reps；请先把 mode 改为 reps');
+    if (next.mode !== 'reps') fail('只有 reps 动作能设置 reps；请先把 mode 改为 reps');
     next.reps = int(patch.reps, 1, 100, 'reps');
   }
   if (patch.reps_min != null) {
-    if (next.mode === 'time') fail('计时动作不能设置 reps_min');
+    if (next.mode !== 'reps') fail('只有 reps 动作能设置 reps_min');
     next.repsMin = int(patch.reps_min, 1, 100, 'reps_min');
   }
-  if (next.mode !== 'time' && next.repsMin != null && next.reps != null && next.repsMin > next.reps) {
+  if (next.mode === 'reps' && next.repsMin != null && next.reps != null && next.repsMin > next.reps) {
     fail('reps_min 不能大于 reps');
   }
   if (patch.weight != null) {
-    if (next.mode === 'time') fail('计时动作不能设置 weight');
+    if (next.mode !== 'reps') fail('只有 reps 动作能设置 weight');
     next.weight = num(patch.weight, 0, 1000, 'weight');
   }
   if (patch.rest_sec != null) next.restSec = int(patch.rest_sec, 0, 900, 'rest_sec');
@@ -290,6 +350,8 @@ function entryLabel(S, entry) {
       })
       .join('·');
     bits.push(`金字塔 ${plan}`);
+  } else if (entry.mode === 'cardio') {
+    bits.push(`${entry.sets ?? 1}×${entry.min ?? 20}分钟 @ ${entry.speed ?? 8}${entry.incline ? ` · 坡度${entry.incline}%` : ''}`);
   } else if (entry.mode === 'time') {
     bits.push(`${entry.sets}×${entry.sec}s`);
   } else {
@@ -511,6 +573,128 @@ export function applyActions(S, actions) {
       next.bodyweight.push({ d: date, w: weight });
       next.bodyweight.sort((a, b) => String(a.d).localeCompare(String(b.d)));
       note(`记录体重：${date} ${weight}${next.unit || 'kg'}`);
+      continue;
+    }
+
+    if (type === 'log_measurement') {
+      const date = action.date ? isoDate(action.date) : todayIso();
+      const values = action.values;
+      if (!isObj(values) || !Object.keys(values).length) fail('log_measurement 需要 values 对象，例如 {"waist": 82}');
+      if (!Array.isArray(next.customMeasurements)) next.customMeasurements = [];
+      if (!Array.isArray(next.measurements)) next.measurements = [];
+      if (!Array.isArray(next.measurementEnabled) || !next.measurementEnabled.length) {
+        next.measurementEnabled = [...DEFAULT_MEASUREMENT_KEYS];
+      }
+      for (const key of Object.keys(values)) {
+        if (!MEASUREMENT_KEYS.includes(key) && key !== 'other' && key !== 'custom') {
+          fail(`不认识的测量字段 ${key}；可用：${MEASUREMENT_KEYS.join(' / ')} / custom`);
+        }
+      }
+      const customPairs = [];
+      if (values.custom != null) {
+        if (!isObj(values.custom)) fail('values.custom 必须是 {名称: 数值}');
+        for (const [name, value] of Object.entries(values.custom)) {
+          const clean = String(name).trim();
+          if (!clean) fail('custom 名称不能为空');
+          let def = next.customMeasurements.find(c => String(c.name) === clean || String(c.id) === clean);
+          if (!def) {
+            def = { id: `c-${Date.now().toString(36)}-${crypto.randomBytes(2).toString('hex')}`, name: clean.slice(0, 60), enabled: true };
+            next.customMeasurements.push(def);
+            note(`新增自定义测量项「${def.name}」`);
+          }
+          customPairs.push({ id: String(def.id), name: def.name, value: num(value, 0, 1000, `custom.${clean}`) });
+        }
+      }
+      if (values.other != null) {
+        if (!Array.isArray(values.other)) fail('values.other 必须是数组');
+        for (const item of values.other) {
+          if (!isObj(item)) fail('values.other 的每一项必须是对象');
+          const key = String(item.id ?? item.name ?? '').trim();
+          if (!key) fail('values.other 需要 id 或 name');
+          let def = next.customMeasurements.find(c => String(c.id) === key || String(c.name) === key);
+          if (!def) {
+            def = { id: `c-${Date.now().toString(36)}-${crypto.randomBytes(2).toString('hex')}`, name: key.slice(0, 60), enabled: true };
+            next.customMeasurements.push(def);
+            note(`新增自定义测量项「${def.name}」`);
+          }
+          customPairs.push({ id: String(def.id), name: def.name, value: num(item.value, 0, 1000, `other.${def.name}`) });
+        }
+      }
+
+      let entry = next.measurements.find(e => e && e.d === date);
+      if (!entry) {
+        entry = { d: date, t: Date.now(), other: [] };
+        for (const key of MEASUREMENT_KEYS) entry[key] = null;
+        next.measurements.push(entry);
+      }
+      const parts = [];
+      for (const key of MEASUREMENT_KEYS) {
+        if (values[key] == null) continue;
+        const v = num(values[key], 0, key === 'bodyFat' ? 100 : 1000, key);
+        entry[key] = Math.round(v * 10) / 10;
+        parts.push(`${key}=${entry[key]}`);
+      }
+      for (const pair of customPairs) {
+        if (!Array.isArray(entry.other)) entry.other = [];
+        const existing = entry.other.find(o => String(o?.id) === pair.id);
+        const rounded = Math.round(pair.value * 10) / 10;
+        if (existing) existing.value = rounded;
+        else entry.other.push({ id: pair.id, name: pair.name, value: rounded });
+        parts.push(`${pair.name}=${rounded}`);
+      }
+      if (!parts.length) fail('log_measurement 没有给出任何数值');
+      entry.t = Date.now();
+      next.measurements.sort((a, b) => String(a.d).localeCompare(String(b.d)));
+      note(`记录体测：${date} ${parts.join('，')}（围度单位 cm，体脂 %）`);
+      continue;
+    }
+
+    if (type === 'set_measurement_fields') {
+      if (!Array.isArray(next.customMeasurements)) next.customMeasurements = [];
+      if (!Array.isArray(next.measurementEnabled) || !next.measurementEnabled.length) {
+        next.measurementEnabled = [...DEFAULT_MEASUREMENT_KEYS];
+      }
+      if (action.enable != null) {
+        if (!Array.isArray(action.enable)) fail('enable 必须是字段名数组');
+        for (const key of action.enable) {
+          oneOf(String(key), MEASUREMENT_KEYS, 'enable');
+          if (!next.measurementEnabled.includes(String(key))) next.measurementEnabled.push(String(key));
+          note(`开启测量项 ${key}`);
+        }
+      }
+      if (action.disable != null) {
+        if (!Array.isArray(action.disable)) fail('disable 必须是字段名数组');
+        for (const key of action.disable) {
+          oneOf(String(key), MEASUREMENT_KEYS, 'disable');
+          next.measurementEnabled = next.measurementEnabled.filter(k => k !== String(key));
+          note(`关闭测量项 ${key}`);
+        }
+      }
+      if (action.custom != null) {
+        if (!Array.isArray(action.custom)) fail('custom 必须是数组');
+        for (const item of action.custom) {
+          if (!isObj(item)) fail('custom 每一项必须是对象');
+          const name = text(String(item.name ?? ''), 60, 'custom.name');
+          const found = next.customMeasurements.find(c => String(c.name) === name || (item.id && String(c.id) === String(item.id)));
+          if (found) {
+            found.name = name;
+            if (item.enabled != null) found.enabled = bool(item.enabled, 'custom.enabled');
+            note(`更新自定义测量项「${name}」`);
+          } else {
+            next.customMeasurements.push({ id: `c-${Date.now().toString(36)}-${crypto.randomBytes(2).toString('hex')}`, name, enabled: item.enabled == null ? true : bool(item.enabled, 'custom.enabled') });
+            note(`新增自定义测量项「${name}」`);
+          }
+        }
+      }
+      if (action.disable_custom != null) {
+        if (!Array.isArray(action.disable_custom)) fail('disable_custom 必须是数组');
+        for (const key of action.disable_custom) {
+          const found = next.customMeasurements.find(c => String(c.id) === String(key) || String(c.name) === String(key));
+          if (!found) fail(`找不到自定义测量项 ${key}`);
+          found.enabled = false;
+          note(`停用自定义测量项「${found.name}」`);
+        }
+      }
       continue;
     }
 
