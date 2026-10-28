@@ -114,12 +114,14 @@ openGym 在你开始训练那一刻按正式重量算递增（3 组时 50% / 75%
 
 ```json
 {
-  "weight": 60, "reps": 16, "done": true, "rir": 1,
+  "weight": 12.5, "reps": 16, "done": true, "rir": null,
   "type": "restpause",
-  "bursts": [{ "reps": 10, "rest_sec": 15 }, { "reps": 4, "rest_sec": 15 }, { "reps": 2, "rest_sec": 15 }],
-  "burst_reps": 16
+  "bursts": [{ "reps": 4, "rest_sec": 15 }],
+  "burst_reps": 4
 }
 ```
+
+（这是本机 2026-10-28「哑铃卧推」真实读出来的样子：12.5kg 做 16 次，其中最后 4 次是 15 秒休息后补的爆发组。）
 
 | 字段 | 含义 |
 |---|---|

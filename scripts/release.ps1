@@ -69,6 +69,19 @@ $token = (Get-Content $tokenFile -Raw).Trim()
 & $git -C $chatgpt remote set-url origin ("https://x-access-token:" + $token + "@github.com/G-Riye/opengym-chatgpt-mcp.git")
 & $git -C $chatgpt push origin main --tags
 $code = $LASTEXITCODE
+# Clash/TUN fake-ip can make github.com unreachable while api.github.com still works,
+# so retry once through the local DoH forwarder (tools/github-forward.mjs, gitignored).
+$forwarder = Join-Path $chatgpt 'tools\github-forward.mjs'
+if ($code -ne 0 -and (Test-Path $forwarder)) {
+  Write-Host '  push failed; retrying through the DoH forwarder'
+  $fwd = Start-Process -FilePath $node -ArgumentList '"tools/github-forward.mjs" 8899' -WorkingDirectory $chatgpt -WindowStyle Hidden -PassThru
+  Start-Sleep -Seconds 2
+  & $git -C $chatgpt config http.proxy 'http://127.0.0.1:8899'
+  & $git -C $chatgpt push origin main --tags
+  $code = $LASTEXITCODE
+  & $git -C $chatgpt config --unset http.proxy
+  Stop-Process -Id $fwd.Id -Force -ErrorAction SilentlyContinue
+}
 & $git -C $chatgpt remote set-url origin 'https://github.com/G-Riye/opengym-chatgpt-mcp.git'
 if ($code -ne 0) { throw 'git push failed' }
 Write-Host "  pushed: https://github.com/G-Riye/opengym-chatgpt-mcp/releases/tag/v$Version"
