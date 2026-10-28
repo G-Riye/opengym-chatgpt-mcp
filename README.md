@@ -118,8 +118,22 @@ scripts/    PowerShell lifecycle: start/stop/autostart, tunnels, smoke tests, QR
 node src/main.mjs doctor    :: data + auth + catalogue check
 node src/main.mjs test      :: in-process MCP smoke test (read-only)
 node scripts/mcp-smoke.mjs  :: protocol-level checks against a running connector
+node scripts/fields-test.mjs:: 31 in-memory checks for the advanced plan fields
 node scripts/write-test.mjs :: write flow against a throwaway copy of the data
 ```
+
+## Releases
+
+Version lives in `package.json` and in `src/server.mjs` (`VERSION`), history in
+`CHANGELOG.md`, and every release is tagged `vX.Y.Z` on GitHub.
+
+```bat
+Release.cmd 1.2.0 "what changed"
+```
+
+`scripts/release.ps1` bumps both version strings, runs `fields-test` and `mcp-smoke`,
+commits, tags, pushes to `origin`, then restarts the connector so the machine is already
+running the new version. Add `-NoPush` to rehearse, `-SkipTests` to skip the suites.
 
 Version history: see [`CHANGELOG.md`](CHANGELOG.md).
 
