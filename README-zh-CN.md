@@ -488,7 +488,7 @@ chatgpt\
     main.mjs                入口（start / doctor / test / token）
     server.mjs              MCP Streamable HTTP + 面板 + 认证
     app-proxy.mjs           把 openGym PWA 发布到 127.0.0.1:8081 给 Funnel（令牌 Cookie 保护）
-    tools.mjs               11 个工具的定义与描述
+    tools.mjs               12 个工具的定义与描述（含 get_measurements）
     state.mjs               读模型（计划/训练/历史/体重/更新游标）
     plan.mjs                计划修改校验、预览、写入、备份
     exercises.mjs           5,632 个动作 + 中文别名搜索
