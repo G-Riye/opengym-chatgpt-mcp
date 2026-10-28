@@ -43,7 +43,7 @@
 
 ---
 
-## 2. 已实现的工具（13 个）
+## 2. 已实现的工具（15 个）
 
 | 工具 | 作用 |
 |---|---|
@@ -53,7 +53,9 @@
 | `get_plan` | 只要计划；拿准确的 `routine_id` 和动作下标 |
 | `search_exercises` | 中文/英文搜 5,632 个内置动作 + 自定义动作；返回 `exercise_id`、部位、器械、是否自重/助力 |
 | `get_exercise_history` | 单个动作的最近训练、最好重量/次数、Epley 估算 1RM |
-| `get_results` | 日期区间内的已完成训练，逐组实际重量/次数/RIR/左右侧/组类型（递减组 `drops`、爆发组 `bursts`、`max`），完成率、容量、PR |
+| `get_results` | 日期区间内的已完成训练，逐组实际重量/次数/RIR/左右侧/组类型（递减组 `drops`、爆发组 `bursts`、`max`、力竭 `failure`），完成率、容量、PR |
+| `preview_session` | **真实开练预览**：按官方开练逻辑（进阶/减载/热身递增/金字塔/递减/爆发组）算出今天实际会上多少重量、多少组 |
+| `get_muscle_balance` | **肌群训练量**：按官方肌群权重统计有效组数（主 1、次 0.5，热身不计），给出周训练量与 0–4 档位 |
 | `get_measurements` | 体测：19 个内置围度/体脂 + 自定义项，最新一次、逐项曲线、历史记录 |
 | `get_updates` | **只返回上次之后新完成的训练**，并推进游标；对话开始时调用即可「更新到当前对话」 |
 | `plan_preview` | 只预览不写入：校验修改、返回中文变更清单 + 15 分钟有效的 `proposal_id` |
@@ -131,6 +133,8 @@ openGym 在你开始训练那一刻按正式重量算递增（3 组时 50% / 75%
 | `bursts` / `burst_reps` | 爆发组的每一段（次数 + 秒数）与合计次数 |
 | `max` | `true` 表示 AMRAP（「Max」）组 |
 | `sides.L` / `sides.R` | 单侧动作左右各自同一套字段 |
+| `failure` / `phase` | `failure:true` 表示力竭组；`phase` 是 App 的 `warmup` / `work` |
+| `order` / `superset` | 这个动作在本次训练里的顺序，以及所属超级组 |
 
 两个配套字段：动作上的 `set_summary` 是各类组的计数（`{straight:2, dropset:1, restpause:1, warmup:1, burst_reps:16}`），
 `prescribed` 是计划里写的强度技巧（`intensifier` / `warmup_sets`），用来区分「计划是休息暂停」和「实际做了休息暂停」。
@@ -157,6 +161,39 @@ openGym 在你开始训练那一刻按正式重量算递增（3 组时 50% / 75%
    ```
    公网入口和本机是同一个进程，`https://riye-pc.tail86ab0.ts.net/mcp` 的 `initialize`
    会返回同一个 `serverInfo.version`。
+### 2.5 真实开练预览与肌群训练量（1.4.0，直接复用官方代码）
+
+这两个工具不自己重算，而是**直接 import openGym 前端模块**（`frontend/src/lib/session-start.js`、
+`progression.js`、`muscles.js`），所以结果和 App 完全一致：
+
+| 工具 | 复用的官方逻辑 | 回答什么问题 |
+|---|---|---|
+| `preview_session` | `buildSessionEntries → buildPlannedEntry → buildSets + applyPrescription` | 「今天开练实际是 62.5kg 还是模板写的 60kg？」「热身几组、热身多重？」「这组是金字塔还是普通组？」 |
+| `get_muscle_balance` | `muscles.loadOfWorkouts + levelsOf` | 「这周胸背肩腿各练了多少组？」「哪个部位练少了？」 |
+
+`preview_session` 返回的每个动作同时带 `prescribed`（模板处方）和 `rows`（实际会显示的行），
+所以「模板 60 → App 62.5」这种差异一眼可见；`rows` 里已包含热身行、推进后的重量、金字塔逐组目标、
+递减/休息暂停的拆分。
+
+`get_muscle_balance` 只统计**已打勾的正式组**，热身不计；主肌群 1 组、次肌群 0.5 组；
+返回按周训练量排序的肌群、App 的 0–4 档位、以及没练到的部位。
+
+### 2.6 审计缺口与当前状态对照
+
+| 审计项 | 现状 |
+|---|---|
+| 爆发组 `clusters` 读不到 | ✅ 1.3.0 起 `type:"restpause"` + `bursts` + `burst_reps`（真实数据已验证） |
+| 递减组 `drops` 只返回主组 | ✅ `drops:[{weight,reps}]` |
+| 热身/正式组 `phase` 不返回 | ✅ `type:"warmup"` + `phase` 原值 |
+| 力竭组 `failure` 无标记 | ✅ `failure:true`，历史里计 `failure_sets` |
+| 有氧 `mode=cardio` 未同步 | ✅ 1.2.0 起 `minutes/speed/incline` |
+| 组前热身 `warmupSets` 未同步 | ✅ `warmup_sets`（0–5），App 自动递增重量 |
+| 超级组可读但无执行顺序 | ✅ 每个动作带 `order` + `superset{group,name,rest_sec}` |
+| 缺少真实开练预览 | ✅ `preview_session`（官方 buildSessionEntries） |
+| 缺少肌群训练量 | ✅ `get_muscle_balance`（官方 muscle weights） |
+| 工具发现 13 vs 11 | ChatGPT 客户端缓存；新开对话或重加连接器即可见 15 个（`get_capabilities` 自查） |
+| 训练历史更正工具 | ⏳ 未做（P2：需要写 workouts，风险高，未放行） |
+| 每组备注/单侧/完成状态 | ✅ `note` / `sides.L,R` / `done` 都有；每组备注 openGym 本身不存 |
 
 ---
 
@@ -505,10 +542,12 @@ chatgpt\
     main.mjs                入口（start / doctor / test / token）
     server.mjs              MCP Streamable HTTP + 面板 + 认证
     app-proxy.mjs           把 openGym PWA 发布到 127.0.0.1:8081 给 Funnel（令牌 Cookie 保护）
-    tools.mjs               13 个工具的定义与描述（含 get_measurements / get_capabilities）
+    tools.mjs               15 个工具的定义与描述（含 get_measurements / get_capabilities / preview_session / get_muscle_balance）
     state.mjs               读模型（计划/训练/历史/体重/更新游标）
     plan.mjs                计划修改校验、预览、写入、备份
     exercises.mjs           5,632 个动作 + 中文别名搜索
+    session.mjs             preview_session：复用官方开练逻辑
+    balance.mjs             get_muscle_balance：复用官方肌群权重
     opengym.mjs             openGym API 客户端 + 令牌派生
     config.mjs              路径/环境配置
   scripts\

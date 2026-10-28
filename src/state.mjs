@@ -224,6 +224,8 @@ function setExtras(s) {
   const bursts = burstsView(s);
   const out = {
     ...(kind !== 'straight' ? { type: kind } : {}),
+    ...(s?.failure === true ? { failure: true } : {}),
+    ...(s?.phase ? { phase: String(s.phase) } : {}),
     ...(s?.max === true ? { max: true } : {}),
     ...(drops.length ? { drops } : {}),
     ...(bursts.length ? { bursts, burst_reps: bursts.reduce((n, b) => n + (Number(b.reps) || 0), 0) } : {}),
@@ -243,6 +245,7 @@ export function workoutView(S, w, { detail = true } = {}) {
   const entries = Array.isArray(w?.entries) ? w.entries : [];
   let setsDone = 0;
   let setsPlanned = 0;
+  let orderIndex = 1;
   const exercises = entries.filter(e => e && e.id).map(e => {
     const target = e.target || {};
     const meta = describe(S, e.id);
@@ -267,6 +270,10 @@ export function workoutView(S, w, { detail = true } = {}) {
       exercise_id: meta.exercise_id || e.id,
       name: meta.name,
       body_part: meta.body_part,
+      order: orderIndex++,
+      superset: (target.sg || e.sg)
+        ? { group: target.sg || e.sg, name: target.sgName || e.sgName || null, rest_sec: target.sgRest ?? e.sgRest ?? null }
+        : null,
       target: {
         sets: planned ?? null, mode: target.mode || e.planned?.mode || null,
         reps: target.reps ?? e.planned?.reps ?? null,
@@ -359,12 +366,14 @@ export function exerciseHistory(S, exerciseId, limit = 8) {
     let dropSets = 0;
     let restPauseSets = 0;
     let burstReps = 0;
+    let failureSets = 0;
     for (const e of entries) {
       for (const s of Array.isArray(e.sets) ? e.sets : []) {
         if (!s?.done) continue;
         doneSets += 1;
         const kind = setKind(s);
         if (kind === 'dropset') dropSets += 1;
+        if (s.failure === true) failureSets += 1;
         if (kind === 'restpause') {
           restPauseSets += 1;
           burstReps += burstsView(s).reduce((n, b) => n + (Number(b.reps) || 0), 0);
@@ -387,6 +396,7 @@ export function exerciseHistory(S, exerciseId, limit = 8) {
       total_reps: totalReps, est_1rm: bestEst,
       ...(dropSets || restPauseSets ? { drop_sets: dropSets, rest_pause_sets: restPauseSets } : {}),
       ...(burstReps ? { burst_reps: burstReps } : {}),
+      ...(failureSets ? { failure_sets: failureSets } : {}),
       ...(note ? { note: String(note).slice(0, 400) } : {}),
     });
   }

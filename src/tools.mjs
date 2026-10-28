@@ -12,6 +12,8 @@ import { search, exerciseCount } from './exercises.mjs';
 import { createProposal, commitProposal, proposalCount } from './plan.mjs';
 import { VERSION } from './version.mjs';
 import { MEASUREMENT_FIELDS } from './state.mjs';
+import { previewSession } from './session.mjs';
+import { muscleBalance } from './balance.mjs';
 
 const obj = (properties = {}, required = []) => ({
   type: 'object', properties, required, additionalProperties: false,
@@ -266,17 +268,22 @@ function capabilities() {
         warmup: '热身组',
       },
       set_fields: ['weight', 'reps', 'seconds', 'minutes', 'speed', 'incline', 'done', 'rir', 'rpe',
-        'type', 'drops', 'bursts', 'burst_reps', 'max', 'note', 'sides.L/R'],
-      workout_exercise_fields: ['exercise_id', 'name', 'body_part', 'target', 'sets', 'top_weight',
+        'type', 'drops', 'bursts', 'burst_reps', 'max', 'failure', 'phase', 'note', 'sides.L/R'],
+      workout_exercise_fields: ['exercise_id', 'name', 'body_part', 'order', 'superset', 'target', 'sets', 'top_weight',
         'set_summary', 'prescribed', 'note'],
       history_session_fields: ['date', 'workout_id', 'routine', 'sets_done', 'top_weight', 'top_reps',
-        'total_reps', 'est_1rm', 'drop_sets', 'rest_pause_sets', 'burst_reps', 'note'],
+        'total_reps', 'est_1rm', 'drop_sets', 'rest_pause_sets', 'burst_reps', 'failure_sets', 'note'],
       measurements: {
         fields: MEASUREMENT_FIELDS.map(f => f.key),
         units: 'centimetres (bodyFat is %); lb profiles only convert for display',
         write_actions: ['log_measurement', 'set_measurement_fields'],
       },
       rest_pause_note: 'a rest-pause row\'s reps already include its bursts (10+4+2 is ONE set of 16)',
+    },
+    analysis: {
+      preview_session: 'official buildSessionEntries → buildPlannedEntry → buildSets + applyPrescription (progression, deload, pyramid, intensifier, warm-up ramp)',
+      muscle_balance: 'official muscles.loadOfWorkouts + levelsOf (primary 1, secondary 0.5, warm-ups excluded)',
+      exercise_history: 'Epley 1RM over completed 1–12 rep sets, warm-ups and bursts excluded',
     },
     workflow: {
       write: 'plan_preview → show changes → user confirms → plan_apply(confirmation:"确认写入")',
@@ -376,6 +383,29 @@ export const TOOLS = [
     }, ['exercise_id']),
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     handler: ({ exercise_id, limit }) => exerciseHistory(requireState(), exercise_id, limit ?? 8),
+  },
+  {
+    name: 'preview_session',
+    title: 'What a session will actually prescribe',
+    description: 'Read-only. Runs the official openGym session builder for a date (default today, or a specific routine_id) and returns the rows the App will open with: warm-up rows with their computed ramp weights, work rows after progression/deload/pyramid, drop-set and rest-pause bursts, per-side splits, rest and notes. The template prescription is returned beside the actual rows, so "template 60 kg → App will show 62.5 kg" is visible. Use it before a session to tell the user the real target numbers.',
+    inputSchema: obj({
+      date: { type: 'string', description: 'YYYY-MM-DD; defaults to today.' },
+      routine_id: { type: 'string', description: 'Preview this routine even if it is not scheduled for that date.' },
+    }),
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    handler: ({ date, routine_id }) => previewSession(requireState(), { date, routine_id }),
+  },
+  {
+    name: 'get_muscle_balance',
+    title: 'Weekly sets per muscle',
+    description: 'Read-only. Effective sets per muscle group over a rolling window (default 7 days), computed with the official openGym muscle weights: primary 1, secondary 0.5, warm-ups excluded, only ticked sets. Returns muscles ranked by weekly sets with the official 0–4 volume level, what was missed, and which workouts were counted. Use it to answer “哪个部位练少了/练多了”.',
+    inputSchema: obj({
+      days: { type: 'integer', minimum: 1, maximum: 365, description: 'Rolling window in days, default 7.' },
+      since: { type: 'string', description: 'YYYY-MM-DD start (overrides days).' },
+      until: { type: 'string', description: 'YYYY-MM-DD end, default today.' },
+    }),
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    handler: ({ days, since, until }) => muscleBalance(requireState(), { days, since, until }),
   },
   {
     name: 'get_results',

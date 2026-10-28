@@ -6,6 +6,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { applyActions } from '../src/plan.mjs';
 import { planView, measurementsView, workoutView, exerciseHistory } from '../src/state.mjs';
+import { previewSession } from '../src/session.mjs';
+import { muscleBalance } from '../src/balance.mjs';
 
 const SELF = path.resolve(import.meta.dirname, '..');
 const ROOT = path.resolve(SELF, '..');
@@ -163,10 +165,11 @@ synthetic.workouts = [{
   id: 'synthetic-1', d: '2026-10-28', name: 'SET TYPES', start: Date.parse('2026-10-28T10:00:00Z'), end: Date.parse('2026-10-28T11:00:00Z'),
   entries: [{
     id: '0025',
+    sg: 'sg-A',
     target: { sets: 3, reps: 8, weight: 60, intensifier: { type: 'restpause', totalReps: 16, restSec: 15 } },
     sets: [
       { w: 40, r: 8, done: true, phase: 'warmup', warmup: true },
-      { w: 60, r: 10, done: true },
+      { w: 60, r: 10, done: true, failure: true },
       { w: 60, r: 12, done: true, type: 'dropset', drops: [{ w: 50, r: 8 }, { w: 40, r: 6 }] },
       { w: 60, r: 16, done: true, type: 'restpause', clusters: [{ r: 10, restSec: 15 }, { r: 4, restSec: 15 }, { r: 2, restSec: 15 }] },
       { w: 60, r: 5, done: true, max: true },
@@ -198,10 +201,37 @@ check('set_summary counts', bench.set_summary?.restpause === 1 && bench.set_summ
 check('prescribed intensifier exposed', bench.prescribed?.intensifier?.type === 'restpause', JSON.stringify(bench.prescribed));
 check('per-side bursts', db.sets[0].sides.L.type === 'restpause' && db.sets[0].sides.L.burst_reps === 16 && db.sets[0].sides.R.burst_reps === 14, JSON.stringify(db.sets[0].sides.L));
 check('workout view totals', wv.sets_done === 7, `sets_done=${wv.sets_done}`);
+check('failure flag exposed', bench.sets[1].failure === true);
+check('phase exposed', bench.sets[0].phase === 'warmup', String(bench.sets[0].phase));
+check('exercise order exposed', bench.order === 1 && db.order === 2, `${bench.order}/${db.order}`);
+check('superset group exposed', bench.superset?.group === 'sg-A', JSON.stringify(bench.superset));
 
 const histRow = exerciseHistory(synthetic, '0025', 1);
 check('history counts rest-pause sets', histRow.sessions[0]?.rest_pause_sets === 1, JSON.stringify(histRow.sessions[0]));
 check('history counts drop sets', histRow.sessions[0]?.drop_sets === 1);
 check('history burst reps', histRow.sessions[0]?.burst_reps === 16, String(histRow.sessions[0]?.burst_reps));
+check('history counts failure sets', histRow.sessions[0]?.failure_sets === 1, String(histRow.sessions[0]?.failure_sets));
+
+/* ---------- 1.4.0: official-logic preview + muscle balance ---------- */
+
+const preview = previewSession(S, { date: '2026-10-28' });
+check('preview_session returns routines', Array.isArray(preview.routines), `${preview.routines?.length ?? 0} routines on 2026-10-28`);
+const previewRoutine = preview.routines?.[0];
+check('preview_session keeps prescription beside rows', !!previewRoutine?.exercises?.[0]?.prescribed,
+  JSON.stringify(previewRoutine?.exercises?.[0]?.prescribed).slice(0, 90));
+const previewRows = (previewRoutine?.exercises || []).flatMap(e => e.rows || []);
+check('preview_session rows are typed', previewRows.length > 0 && previewRows.every(r => r.kind === 'work' || r.kind === 'warmup'),
+  `${previewRows.length} rows`);
+check('preview_session applies progression (rows may differ from template weight)',
+  (previewRoutine?.exercises || []).some(e => (e.rows || []).some(r => r.weight !== e.prescribed?.weight)),
+  'compared row weights against template weight');
+
+const balance = muscleBalance(S, { days: 7 });
+check('muscle balance window', balance.window?.days === 7, JSON.stringify(balance.window));
+check('muscle balance counts workouts', balance.workouts >= 1, `${balance.workouts} workouts, ${balance.total_effective_sets} effective sets`);
+check('muscle balance ranked', Array.isArray(balance.muscles) && balance.muscles.every((m, i, a) => i === 0 || a[i - 1].weekly_sets >= m.weekly_sets),
+  balance.muscles.slice(0, 3).map(m => `${m.name_zh || m.name}=${m.weekly_sets}`).join(', '));
+check('muscle balance has labels', !!balance.muscles[0]?.name_zh, balance.muscles[0]?.name_zh);
+
 
 console.log(`\nrevision in memory: ${S._rev} (unchanged - nothing was written)`);

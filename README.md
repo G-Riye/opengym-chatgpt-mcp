@@ -65,6 +65,8 @@ Full Chinese guide: [`README-zh-CN.md`](README-zh-CN.md).
 | `search_exercises` | read | 5,600+ exercise library, Chinese + English |
 | `get_exercise_history` | read | per-exercise session history, best set, est. 1RM |
 | `get_results` | read | completed sessions in a date range |
+| `preview_session` | read | what a session will *actually* prescribe (official progression + warm-up ramp + pyramid + intensifiers) |
+| `get_muscle_balance` | read | effective weekly sets per muscle, official weights (primary 1, secondary 0.5) |
 | `get_measurements` | read | body measurements: 19 built-in fields + custom, series and latest |
 | `get_updates` | read | only workouts completed since the last sync (cursor) |
 | `plan_preview` | dry-run | validate edits, return a change list + `proposal_id` |
@@ -80,6 +82,16 @@ every write creates a backup in `store/backups/` (last 30 kept).
 `get_capabilities` returns the live manifest: connector version, every tool with its write
 flag, the full plan-edit vocabulary and limits, and the fields the read model exposes —
 generated from the same schemas the model is offered, and safe to call offline.
+
+### Analysis built on the official logic
+
+Two read tools reuse openGym's own frontend modules instead of re-deriving the maths:
+
+- `preview_session` calls `buildSessionEntries` (session-start → buildSets →
+  applyPrescription), so the rows it returns are the numbers the App will open with —
+  warm-up ramp, progression/deload, pyramid targets, drop-sets and rest-pause bursts.
+- `get_muscle_balance` calls `muscles.loadOfWorkouts` + `levelsOf`: effective sets per
+  muscle (primary 1, secondary 0.5, warm-ups excluded) with the App's 0–4 volume levels.
 
 ### What a plan edit can prescribe
 
@@ -130,6 +142,8 @@ was actually done rather than just weight × reps:
 | `bursts` / `burst_reps` | the short-rest bursts of a rest-pause set, and their total reps |
 | `max` | `true` on an AMRAP ("Max") set |
 | `sides.L` / `sides.R` | the same keys per limb on a unilateral set |
+| `failure` / `phase` | `failure: true` on a set taken to failure; `phase` is the app's `warmup`/`work` |
+| `order` / `superset` | the exercise's position in the session and its superset group |
 
 A rest-pause row's `reps` **already includes its bursts** (`10+4+2` is one set of 16), so bursts
 are a breakdown, not extra sets. Exercises also carry `set_summary` (counts by type) and

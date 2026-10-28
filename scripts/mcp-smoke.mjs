@@ -53,7 +53,7 @@ check('initialize', init.status === 200 && init.data?.result?.protocolVersion ==
 
 const list = await rpc('tools/list', {});
 const tools = list.data?.result?.tools || [];
-check('tools/list', tools.length === 13, `${tools.length} tools`);
+check('tools/list', tools.length === 15, `${tools.length} tools`);
 check('no write tool without schema', tools.every(t => t.inputSchema?.type === 'object'));
 
 const capabilities = await call('get_capabilities');
@@ -94,7 +94,7 @@ const unauth = await rpc('tools/list', {}, { auth: false });
 check('rejects missing token', unauth.status === 401, `HTTP ${unauth.status}`);
 
 const pathAuth = await rpc('tools/list', {}, { auth: false, viaPath: true });
-check('accepts token in path', pathAuth.status === 200 && (pathAuth.data?.result?.tools || []).length === 13);
+check('accepts token in path', pathAuth.status === 200 && (pathAuth.data?.result?.tools || []).length === 15);
 
 console.log(failures ? `\n${failures} check(s) failed` : '\nall checks passed');
 process.exit(failures ? 1 : 0);

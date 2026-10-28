@@ -5,6 +5,28 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-28
+
+### Added
+- **`preview_session`** (14th tool): runs the *official* frontend session builder
+  (`session-start.js buildSessionEntries → buildSets + applyPrescription`) and returns the rows
+  the App will open with — warm-up ramp weights, progression/deload-adjusted loads, pyramid
+  per-set targets, drop-set and rest-pause bursts, per-side splits — beside the template
+  prescription, so "template 60 kg → App 62.5 kg" is visible before the session.
+- **`get_muscle_balance`** (15th tool): effective sets per muscle over a rolling window with the
+  official `muscles.loadOfWorkouts` + `levelsOf` weights (primary 1, secondary 0.5, warm-ups
+  excluded, only ticked sets), ranked weekly volume, the 0–4 level and what was missed.
+- Read model now returns the remaining per-set facts: `failure: true` (力竭组), the raw `phase`,
+  the exercise `order` in the session and its `superset {group,name,rest_sec}`; exercise history
+  counts `failure_sets`.
+- `get_capabilities` documents the two new analysis tools and the extra read fields.
+- `scripts/fields-test.mjs` is now **85 checks**, including preview rows vs template weight and
+  the muscle-balance ranking/labels.
+
+### Changed
+- Server instructions #13/#14 tell the model to use `preview_session` for real target numbers
+  and `get_muscle_balance` for volume questions instead of re-deriving them.
+
 ## [1.3.2] - 2026-10-28
 
 ### Added
