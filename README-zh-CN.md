@@ -238,6 +238,27 @@ openGym 在你开始训练那一刻按正式重量算递增（3 组时 50% / 75%
 | 训练历史更正工具 | ⏳ 未做（P2：需要写 workouts，风险高，未放行） |
 | 每组备注/单侧/完成状态 | ✅ `note` / `sides.L,R` / `done` 都有；每组备注 openGym 本身不存 |
 
+### 2.7 写入确认：默认要确认，也可以关掉（1.4.9）
+
+默认（`confirm`）：`plan_apply` 只接受「确认写入」，而模型只能在你**看过变更清单并同意**之后发这句。
+
+如果你自己用、不想每次都回一句“确认”，开免确认：
+
+```bat
+Write-Mode.cmd            :: 看当前模式
+Write-Mode.cmd auto       :: 免确认：预览后可直接 plan_apply(confirmation:"直接写入")
+Write-Mode.cmd confirm    :: 改回每次确认（默认）
+```
+
+两种模式都**仍然**保留：预览不写入、rev 冲突拒绝、写前备份（30 份）、字段校验。
+区别只有一个——免确认模式下模型可以把“展示 changes”和“提交”放在同一轮里，不再等你第二句话。
+
+模式存在 `store/write-mode.txt`，每次写入前重新读取（**不用重启连接器**），并会在
+`get_status.write_mode`、`plan_preview.write_mode`、`get_capabilities().workflow.write_mode`
+里如实上报，所以你可以随时问模型“现在是什么模式”。
+
+> 想临时试一次也可以不改文件：`OPENGYM_CONFIRM=off` 启动连接器即等价于 auto。
+
 ---
 
 ## 3. 快速开始（本机已验证）

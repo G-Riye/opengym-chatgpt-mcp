@@ -9,7 +9,7 @@ import {
   resetUpdates, todayIso, measurementsView,
 } from './state.mjs';
 import { search, exerciseCount } from './exercises.mjs';
-import { createProposal, commitProposal, proposalCount } from './plan.mjs';
+import { createProposal, commitProposal, proposalCount, writeMode } from './plan.mjs';
 import { VERSION } from './version.mjs';
 import { MEASUREMENT_FIELDS } from './state.mjs';
 import { previewSession } from './session.mjs';
@@ -287,7 +287,12 @@ function capabilities() {
       exercise_history: 'Epley 1RM over completed 1–12 rep sets, warm-ups and bursts excluded',
     },
     workflow: {
-      write: 'plan_preview → show changes → user confirms → plan_apply(confirmation:"确认写入")',
+      write: 'plan_preview → show changes → user confirms → plan_apply(confirmation:"确认写入"); in auto mode plan_apply also accepts "直接写入" and the per-change human yes may be skipped',
+      write_mode: writeMode(),
+      write_modes: {
+        confirm: 'default: plan_apply needs 确认写入 after the user agreed',
+        auto: 'owner pre-authorised: 直接写入 is accepted too (Write-Mode.cmd auto)',
+      },
       safety: [
         'preview never writes',
         'apply checks the document revision and refuses stale proposals',
@@ -318,6 +323,7 @@ export const TOOLS = [
         rev: S?._rev ?? 0,
         has_state: !!S,
         writes_enabled: config.writes,
+        write_mode: writeMode(),
         api_base: config.baseUrl,
         data_dir: config.dataDir,
         today: todayIso(),
@@ -475,10 +481,13 @@ export const TOOLS = [
   {
     name: 'plan_apply',
     title: 'Write a previewed plan change',
-    description: 'WRITE, HIGH IMPACT. Commits a proposal previously returned by plan_preview. Requires the exact proposal_id and the literal confirmation 「确认写入」, which you may only send after the user has seen the change list and explicitly agreed. The server checks the document revision, writes a backup, and refuses stale or conflicting proposals rather than overwriting. Never retry after a conflict — re-read the plan and preview again.',
+    description: 'WRITE, HIGH IMPACT. Commits a proposal previously returned by plan_preview. Requires the exact proposal_id plus a confirmation literal: 「确认写入」 (the user saw the change list and agreed) or 「直接写入」 (only when the connector runs in auto mode, i.e. get_status.write_mode = "auto", which the owner enables with Write-Mode.cmd auto). The server always checks the document revision and writes a backup, and refuses stale or conflicting proposals rather than overwriting. Never retry after a conflict — re-read the plan and preview again.',
     inputSchema: obj({
       proposal_id: { type: 'string' },
-      confirmation: { type: 'string', enum: ['确认写入'] },
+      confirmation: {
+        type: 'string', enum: ['确认写入', '直接写入'],
+        description: '「确认写入」 = the user explicitly agreed. 「直接写入」 = only valid in auto mode (per-change confirmation skipped by the owner).',
+      },
     }, ['proposal_id', 'confirmation']),
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     handler: ({ proposal_id, confirmation }) => {

@@ -716,16 +716,55 @@ function backup(state) {
   return file;
 }
 
+/* ---------- write mode ----------
+   "confirm" (default): plan_apply only accepts the literal 确认写入, which the model may
+   only send after the user has seen the diff and agreed.
+   "auto": the machine owner has pre-authorised writes for themselves; plan_apply also
+   accepts 直接写入 so a workflow can skip the per-change round trip. Preview still runs,
+   the revision check and the backup still happen - only the human "yes" step is skipped.
+   Switch with Write-Mode.cmd / scripts\set-write-mode.ps1, or OPENGYM_CONFIRM=off. */
+export const WRITE_MODES = ['confirm', 'auto'];
+const writeModeFile = () => path.join(config.storeDir, 'write-mode.txt');
+
+export function writeMode() {
+  const env = String(process.env.OPENGYM_CONFIRM || '').trim().toLowerCase();
+  if (['off', 'none', 'auto', 'no', '0', 'false'].includes(env)) return 'auto';
+  if (['on', 'strict', 'confirm', 'yes', '1', 'true'].includes(env)) return 'confirm';
+  try {
+    const value = fs.readFileSync(writeModeFile(), 'utf8').replace(/^\uFEFF/, '').trim().toLowerCase();
+    if (WRITE_MODES.includes(value)) return value;
+  } catch {}
+  return 'confirm';
+}
+
+export function setWriteMode(mode) {
+  if (!WRITE_MODES.includes(mode)) fail(`write mode 只能是 ${WRITE_MODES.join(' / ')}`);
+  fs.mkdirSync(config.storeDir, { recursive: true });
+  fs.writeFileSync(writeModeFile(), mode + '\n');
+  return mode;
+}
+
+/* Pure so it can be unit-tested without the API. */
+export function confirmationAccepted(mode, confirmation) {
+  return mode === 'auto'
+    ? { ok: confirmation === '确认写入' || confirmation === '直接写入',
+        reason: 'confirmation 必须是「确认写入」（用户确认过）或「直接写入」（已开启免确认模式）' }
+    : { ok: confirmation === '确认写入',
+        reason: 'confirmation 必须是「确认写入」；请先让用户看过预览并明确同意（要免确认请运行 Write-Mode.cmd auto）' };
+}
+
 export function createProposal(S, actions) {
   const { state, changes, touched } = applyActions(S, actions);
   const id = crypto.randomUUID();
   const expires = Date.now() + config.proposalTtlMs;
+  const mode = writeMode();
   proposals.set(id, { id, state, changes, touched, baseRev: S._rev || 0, baseWid: S._wid || null, expires });
   for (const [key, value] of proposals) if (value.expires < Date.now()) proposals.delete(key);
   return {
     proposal_id: id,
     expires_in_seconds: Math.round(config.proposalTtlMs / 1000),
     base_rev: S._rev || 0,
+    write_mode: mode,
     changes,
     touched_routines: touched.map(rid => ({ routine_id: rid, name: routineName(S, rid) })),
     plan_after: (() => {
@@ -733,12 +772,16 @@ export function createProposal(S, actions) {
       const keep = new Set(touched);
       return { ...view, routines: view.routines.filter(r => keep.has(r.routine_id)) };
     })(),
-    next_step: '把 changes 原样给用户看，并问是否写入。用户明确同意后，调用 plan_apply，confirmation 固定为「确认写入」。',
+    next_step: mode === 'auto'
+      ? '免确认模式已开启：把 changes 原样展示后可以直接调用 plan_apply，confirmation 用「直接写入」；用户若要求先确认，就等他说了再用「确认写入」。'
+      : '把 changes 原样给用户看，并问是否写入。用户明确同意后，调用 plan_apply，confirmation 固定为「确认写入」。',
   };
 }
 
 export async function commitProposal(id, confirmation) {
-  if (confirmation !== '确认写入') fail('confirmation 必须是「确认写入」；请先让用户看过预览并明确同意', 'confirmation');
+  const mode = writeMode();
+  const verdict = confirmationAccepted(mode, confirmation);
+  if (!verdict.ok) fail(verdict.reason, 'confirmation');
   const proposal = proposals.get(id);
   if (!proposal) fail('proposal_id 不存在或已过期；请重新调用 plan_preview', 'expired');
   if (proposal.expires < Date.now()) { proposals.delete(id); fail('预览已过期（15 分钟）；请重新预览', 'expired'); }
@@ -766,6 +809,7 @@ export async function commitProposal(id, confirmation) {
     ok: true,
     rev: result.rev ?? after?._rev ?? null,
     backup: path.basename(backupFile),
+    write_mode: mode,
     changes: proposal.changes,
     message: '已写入 openGym。打开或刷新 App 就能看到新计划；训练数据未改动。',
   };

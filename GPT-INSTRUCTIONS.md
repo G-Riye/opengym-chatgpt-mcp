@@ -19,6 +19,10 @@
 4. 写入成功后用 get_plan 复核，并告诉我打开/刷新 openGym App 查看。
 不要在同一条回复里预览完就直接写入；除非我在上一条里已经明确预授权。
 
+例外（免确认模式）：如果 get_status 的 write_mode 是 "auto"（我自己用 Write-Mode.cmd auto 开的），
+那么看完 changes 后可以直接 plan_apply，confirmation 用「直接写入」，不用再等我回一句确认；
+我明确要求“先给我看”时仍然等我说了再用「确认写入」。rev 冲突和备份在两种模式下都照常生效。
+
 【计划规范】
 - 每个动作必须有：sets、reps（或 reps_min/reps）、weight、rest_sec；计时动用 mode=time + seconds。
 - 单侧动作标 side=true；自重/助力动作标 bodyweight/assisted。重量单位用我档案里的单位。

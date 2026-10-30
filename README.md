@@ -77,6 +77,20 @@ Full Chinese guide: [`README-zh-CN.md`](README-zh-CN.md).
 Write safety: preview never writes, apply refuses stale proposals (revision check),
 every write creates a backup in `store/backups/` (last 30 kept).
 
+**Confirmation mode.** By default `plan_apply` only accepts the literal 「确认写入」, which the
+model may send only after you saw the change list and agreed. If you own the machine and do
+not want that per-change step, switch the connector to auto mode:
+
+```bat
+Write-Mode.cmd auto      :: plan_apply also accepts 「直接写入」 (no second reply)
+Write-Mode.cmd confirm   :: back to asking every time (default)
+Write-Mode.cmd           :: show the current mode
+```
+
+Preview, the revision check and the backup still run in auto mode — only the human "yes" is
+skipped. The mode is stored in `store/write-mode.txt`, re-read on every write, and reported by
+`get_status.write_mode` / `get_capabilities().workflow.write_mode`.
+
 ### Capabilities are self-describing
 
 `GET /version` (no token) reports the running build and tool names, and every response carries

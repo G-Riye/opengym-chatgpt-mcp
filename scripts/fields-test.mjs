@@ -4,7 +4,7 @@
    written. It NEVER calls the API and never touches data/. */
 import fs from 'node:fs';
 import path from 'node:path';
-import { applyActions } from '../src/plan.mjs';
+import { applyActions, confirmationAccepted, writeMode } from '../src/plan.mjs';
 import { planView, measurementsView, workoutView, exerciseHistory } from '../src/state.mjs';
 import { previewSession } from '../src/session.mjs';
 import { muscleBalance } from '../src/balance.mjs';
@@ -299,5 +299,19 @@ rejects('rejects an unknown exercise field', [{ type: 'create_routine', name: 'X
 rejects('rejects an exercise without id', [{ type: 'create_routine', name: 'X', exercises: [{ sets: 3, reps: 8 }] }]);
 rejects('rejects an empty routine', [{ type: 'create_routine', name: 'X', exercises: [] }]);
 rejects('rejects 31 preview actions', Array.from({ length: 31 }, () => ({ type: 'update_routine', routine_id: (S.routines || [])[0]?.id })));
+
+
+/* ---------- write modes: confirm vs auto ---------- */
+
+process.env.OPENGYM_CONFIRM = 'off';
+check('writeMode: env off -> auto', writeMode() === 'auto', writeMode());
+process.env.OPENGYM_CONFIRM = 'on';
+check('writeMode: env on -> confirm', writeMode() === 'confirm', writeMode());
+delete process.env.OPENGYM_CONFIRM;
+check('confirm mode accepts 确认写入', confirmationAccepted('confirm', '确认写入').ok === true);
+check('confirm mode rejects 直接写入', confirmationAccepted('confirm', '直接写入').ok === false);
+check('auto mode accepts 直接写入', confirmationAccepted('auto', '直接写入').ok === true);
+check('auto mode accepts 确认写入', confirmationAccepted('auto', '确认写入').ok === true);
+check('auto mode rejects junk', confirmationAccepted('auto', '写入').ok === false);
 
 console.log(`\nrevision in memory: ${S._rev} (unchanged - nothing was written)`);

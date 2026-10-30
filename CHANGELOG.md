@@ -5,6 +5,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 
 ## [Unreleased]
 
+## [1.4.9] - 2026-10-30
+
+### Added
+- **Write mode switch: 确认 / 免确认.** Default stays `confirm` (plan_apply only accepts
+  「确认写入」 after the user agreed). New `auto` mode (the machine owner's choice, via
+  `Write-Mode.cmd auto` or `OPENGYM_CONFIRM=off`) additionally accepts 「直接写入」, so a
+  workflow can show the diff and commit without a second human reply. Preview, revision
+  check and the pre-write backup still run in both modes; `get_status.write_mode`,
+  `plan_preview.write_mode` and `get_capabilities.workflow.write_mode` report the current mode.
+- `Write-Mode.cmd [auto|confirm|show]` + `scripts/set-write-mode.ps1`; the mode is stored in
+  `store/write-mode.txt` and re-read on every write, so no connector restart is needed.
+- Server instruction #4 documents the exception: in auto mode the model may apply with
+  「直接写入」 right after showing the changes.
+- `fields-test` grew to **105 checks**, including the confirmation matrix for both modes.
+
 ## [1.4.8] - 2026-10-29
 
 ### Added
