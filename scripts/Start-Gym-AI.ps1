@@ -10,6 +10,12 @@ $utf8 = New-Object Text.UTF8Encoding($false)
 New-Item -ItemType Directory -Force -Path $logs, $store | Out-Null
 $log = Join-Path $logs 'autostart.log'
 
+# Windows PowerShell 5.1 throws in Start-Process -Redirect* when the environment has
+# both NO_PROXY and no_proxy (case-only duplicates). Drop the lowercase copies.
+foreach ($name in 'no_proxy', 'http_proxy', 'https_proxy') {
+  try { Remove-Item -Path ('Env:' + $name) -ErrorAction Stop } catch { }
+}
+
 function Log($message) {
   $line = (Get-Date).ToString('o') + '  ' + $message
   [IO.File]::AppendAllText($log, $line + "`r`n", $utf8)
@@ -65,18 +71,23 @@ if (-not (Alive 'http://127.0.0.1:8081/__healthz')) {
 
 if (-not $NoTunnel) {
   $modeFile = Join-Path $store 'tunnel-mode.txt'
-  if (Test-Path -LiteralPath $modeFile) {
-    $mode = (Get-Content -LiteralPath $modeFile -Raw).Trim()
-    if ($mode -and $mode -ne 'none' -and $mode -ne 'secure') {
-      Log ('starting tunnel: ' + $mode)
-      try {
-        $tunnelArgs = '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' +
-          (Join-Path $PSScriptRoot 'tunnel.ps1') + '" -Mode ' + $mode + ' -Quiet'
-        Start-Process -FilePath 'powershell.exe' -ArgumentList $tunnelArgs -WindowStyle Hidden `
-          -RedirectStandardOutput (Join-Path $logs 'tunnel-autostart.log') `
-          -RedirectStandardError (Join-Path $logs 'tunnel-autostart-error.log') | Out-Null
-      } catch { Log ('tunnel failed: ' + $_.Exception.Message) }
-    }
+  $mode = ''
+  if (Test-Path -LiteralPath $modeFile) { $mode = ([IO.File]::ReadAllText($modeFile, [Text.Encoding]::UTF8)).Trim() }
+  if (-not $mode) {
+    Log 'tunnel skipped: store\tunnel-mode.txt is missing (run scripts\tunnel.ps1 -Mode cloudflare once)'
+  } elseif ($mode -eq 'none') {
+    Log 'tunnel skipped: tunnel-mode.txt = none, so public access stays OFF (this file is set to none by Stop.cmd / tunnel.ps1 -Mode stop; set cloudflare to re-enable)'
+  } elseif ($mode -eq 'secure') {
+    Log 'tunnel skipped: secure tunnel is started manually (scripts\tunnel.ps1 -Mode secure)'
+  } else {
+    Log ('starting tunnel: ' + $mode)
+    try {
+      $tunnelArgs = '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' +
+        (Join-Path $PSScriptRoot 'tunnel.ps1') + '" -Mode ' + $mode + ' -Quiet'
+      Start-Process -FilePath 'powershell.exe' -ArgumentList $tunnelArgs -WindowStyle Hidden `
+        -RedirectStandardOutput (Join-Path $logs 'tunnel-autostart.log') `
+        -RedirectStandardError (Join-Path $logs 'tunnel-autostart-error.log') | Out-Null
+    } catch { Log ('tunnel failed: ' + $_.Exception.Message) }
   }
 }
 
